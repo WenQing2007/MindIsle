@@ -1,3 +1,8 @@
+fastapi==0.143.0
+uvicorn==0.40.0
+pydantic==2.13.4
+fpdf2==2.8.9
+
 SpeechRecognition
 pyttsx3
 playsound==1.2.2
