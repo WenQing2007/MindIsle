@@ -81,10 +81,20 @@ def init_db():
             FOREIGN KEY (session_id) REFERENCES chat_session(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS treehole (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id    INTEGER,
+            content       TEXT    NOT NULL,
+            is_anonymous  INTEGER NOT NULL DEFAULT 1,
+            created_at    TEXT    NOT NULL,
+            FOREIGN KEY (student_id) REFERENCES student(id) ON DELETE SET NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_message_session ON chat_message(session_id);
         CREATE INDEX IF NOT EXISTS idx_assessment_session ON risk_assessment(session_id);
         CREATE INDEX IF NOT EXISTS idx_report_session    ON report(session_id);
         CREATE INDEX IF NOT EXISTS idx_session_student   ON chat_session(student_id);
+        CREATE INDEX IF NOT EXISTS idx_treehole_student  ON treehole(student_id);
         """)
 
 
@@ -285,6 +295,42 @@ def get_reports_by_student(student_id):
             WHERE s.student_id = ?
             ORDER BY r.created_at DESC
         """, (student_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ============================================================
+# 树洞
+# ============================================================
+
+def add_treehole(student_id, content, is_anonymous=1):
+    """发布树洞心事。匿名时 student_id 置 NULL，仅保留 is_anonymous=1 标记。
+    返回新记录 dict（含 id / created_at）。"""
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO treehole (student_id, content, is_anonymous, created_at) VALUES (?, ?, ?, ?)",
+            (student_id if not is_anonymous else None, content,
+             1 if is_anonymous else 0, datetime.now().isoformat(timespec="seconds"))
+        )
+        row = conn.execute("SELECT * FROM treehole WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return dict(row)
+
+
+def get_all_treeholes():
+    """树洞广场：全部树洞，按发布时间倒序。"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM treehole ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_treeholes_by_student(student_id):
+    """我的树洞：某学生发布的全部树洞。"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM treehole WHERE student_id = ? ORDER BY created_at DESC",
+            (student_id,)
+        ).fetchall()
         return [dict(r) for r in rows]
 
 
