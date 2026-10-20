@@ -30,14 +30,17 @@ def init_db():
     with get_connection() as conn:
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS student (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            name          TEXT    NOT NULL,
-            gender        TEXT,
-            age           INTEGER,
-            school        TEXT,
-            grade         TEXT,
-            created_at    TEXT    NOT NULL
-        );
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT    NOT NULL UNIQUE,
+    password      TEXT    NOT NULL,
+    name          TEXT    NOT NULL,
+    gender        TEXT,
+    age           INTEGER,
+    school        TEXT,
+    grade         TEXT,
+    created_at    TEXT    NOT NULL
+);
+
 
         CREATE TABLE IF NOT EXISTS chat_session (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,6 +100,18 @@ def add_student(name, gender=None, age=None, school=None, grade=None):
         )
         return cur.lastrowid
 
+def get_student_by_account(username: str, password: str):
+    """根据账号密码查询学生"""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        sql = """
+            SELECT id, username FROM student WHERE username = ? AND password = ?
+        """
+        cur.execute(sql, (username, password))
+        row = cur.fetchone()
+        if row:
+            return {"id": row[0], "username": row[1]}
+    return None
 
 def get_student(student_id):
     with get_connection() as conn:
@@ -293,5 +308,22 @@ def get_stats():
 
 if __name__ == "__main__":
     init_db()
+    print(f"数据库初始化完成: {DB_PATH}")
+    print("统计信息:", get_stats())
+
+   # ============================================================
+# 新增：添加测试账号函数（放到全局，不要写在main里面）
+# ============================================================
+def add_test_student():
+    with get_connection() as conn:
+        # 测试账号：2025212121，密码123456
+        conn.execute("""
+            INSERT OR IGNORE INTO student (username,password,name,created_at) 
+            VALUES (?,?,?,?)
+        """, ("2025212121","123456","测试学生", datetime.now().isoformat(timespec="seconds")))
+
+if __name__ == "__main__":
+    init_db()
+    add_test_student()   # 初始化时自动插入测试账号
     print(f"数据库初始化完成: {DB_PATH}")
     print("统计信息:", get_stats())

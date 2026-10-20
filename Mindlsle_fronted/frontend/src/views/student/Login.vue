@@ -16,18 +16,15 @@
     </el-card>
   </div>
 </template>
-
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 const router = useRouter()
-
 const loginFormRef = ref(null)
 const loginForm = ref({
   username: '',
   password: ''
 })
-
 import { studentLogin } from '@/api/student'
 const handleLogin = async () => {
   if (!loginForm.value.username || !loginForm.value.password) {
@@ -38,6 +35,7 @@ const handleLogin = async () => {
     const res = await studentLogin(loginForm.value)
     if (res.code === 200) {
       localStorage.setItem('token', res.data.token)
+      localStorage.setItem('student_id', res.data.student_id)
       localStorage.setItem('userType', 'student')
       alert("登录成功，跳转学生主页")
       router.push('/student/home')
@@ -49,10 +47,7 @@ const handleLogin = async () => {
     alert("请求异常，请检查后端服务是否启动")
   }
 }
-
-
 </script>
-
 <style scoped>
 .login-container{
   height:100vh;

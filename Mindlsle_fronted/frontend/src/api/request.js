@@ -1,7 +1,6 @@
 import axios from 'axios'
-
 const service = axios.create({
-  baseURL: 'http://localhost:8080', //后端端口，根据你的后端修改
+  baseURL: 'http://127.0.0.1:8000',
   timeout: 5000
 })
 
@@ -13,7 +12,6 @@ service.interceptors.request.use(config => {
   }
   return config
 }, err => Promise.reject(err))
-
 // 响应拦截
 service.interceptors.response.use(res=>{
   return res.data
@@ -26,5 +24,5 @@ service.interceptors.response.use(res=>{
   }
   return Promise.reject(err)
 })
-
 export default service
+

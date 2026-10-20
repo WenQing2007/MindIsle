@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-
 const routes = [
   // 学生端路由 /student
   {
@@ -21,7 +20,16 @@ const routes = [
     name: 'TreeHole',
     component: () => import('../views/student/TreeHole.vue')
   },
-
+  {
+    path: '/student/chat',
+    name: 'StudentChat',
+    component: () => import('../views/student/Chat.vue')
+  },
+  {
+    path: '/student/report',
+    name: 'ReportList',
+    component: () => import('../views/student/ReportList.vue')
+  },
   // 教师工作台路由 /teacher
   {
     path: '/teacher',
@@ -37,7 +45,6 @@ const routes = [
     name: 'WarnList',
     component: () => import('../views/teacher/WarnList.vue')
   },
-
   // 管理员后台 /admin
   {
     path: '/admin',
@@ -48,26 +55,22 @@ const routes = [
     name: 'AdminLogin',
     component: () => import('../views/admin/Login.vue')
   },
-
   // 默认首页
   {
     path: '/',
     redirect: '/student/home'
   }
 ]
-
 const router = createRouter({
   history: createWebHistory(),
   routes
 })
-
 export default router
 // 路由全局守卫
 router.beforeEach((to, from, next) => {
   // 不需要登录的白名单页面
   const whiteList = ['/student/login', '/teacher/login', '/admin/login']
   const token = localStorage.getItem('token')
-
   if (token) {
     // 已有token，登录状态
     if (to.path === '/student/login' || to.path === '/teacher/login' || to.path === '/admin/login') {
