@@ -39,6 +39,8 @@ const handleLogin = async () => {
     if (res.code === 200) {
       localStorage.setItem('token', res.data.token)
       localStorage.setItem('userType', 'student')
+      localStorage.setItem('student_id', res.data.student_id)
+      localStorage.setItem('name', res.data.name)
       alert("登录成功，跳转学生主页")
       router.push('/student/home')
     } else {

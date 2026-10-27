@@ -1,5 +1,7 @@
 import sqlite3
 import os
+import hashlib
+import secrets
 from datetime import datetime
 from contextlib import contextmanager
 
@@ -76,6 +78,24 @@ def init_db():
             file_path     TEXT,
             created_at    TEXT    NOT NULL,
             FOREIGN KEY (session_id) REFERENCES chat_session(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS user_account (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            username      TEXT    NOT NULL UNIQUE,
+            password_hash TEXT    NOT NULL,
+            role          TEXT    NOT NULL CHECK(role IN ('student', 'teacher', 'admin')),
+            student_id    INTEGER,
+            token         TEXT,
+            created_at    TEXT    NOT NULL,
+            FOREIGN KEY (student_id) REFERENCES student(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS treehole (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            content       TEXT    NOT NULL,
+            author_name   TEXT    DEFAULT '匿名用户',
+            created_at    TEXT    NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_message_session ON chat_message(session_id);
@@ -291,7 +311,97 @@ def get_stats():
         return stats
 
 
+# ============================================================
+# 用户账号 & 登录
+# ============================================================
+
+def _hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def _gen_token() -> str:
+    return secrets.token_hex(24)
+
+
+def create_user(username: str, password: str, role: str, student_id: int | None = None):
+    pw_hash = _hash_password(password)
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO user_account (username, password_hash, role, student_id, created_at) VALUES (?, ?, ?, ?, ?)",
+            (username, pw_hash, role, student_id, datetime.now().isoformat(timespec="seconds"))
+        )
+        return cur.lastrowid
+
+
+def authenticate(username: str, password: str):
+    pw_hash = _hash_password(password)
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM user_account WHERE username = ? AND password_hash = ?",
+            (username, pw_hash)
+        ).fetchone()
+        if not row:
+            return None
+        token = _gen_token()
+        conn.execute("UPDATE user_account SET token = ? WHERE id = ?", (token, row["id"]))
+        user = dict(row)
+        user["token"] = token
+        return user
+
+
+def get_user_by_token(token: str):
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM user_account WHERE token = ?", (token,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def clear_token(user_id: int):
+    with get_connection() as conn:
+        conn.execute("UPDATE user_account SET token = NULL WHERE id = ?", (user_id,))
+
+
+def seed_default_users():
+    with get_connection() as conn:
+        existing = conn.execute("SELECT COUNT(*) FROM user_account").fetchone()[0]
+        if existing > 0:
+            return
+        student_id = add_student("王小明", gender="男", age=16, school="示例中学", grade="高二(1)班")
+        create_user("student", "123456", "student", student_id)
+        create_user("teacher", "123456", "teacher")
+        create_user("admin", "123456", "admin")
+
+
+# ============================================================
+# 树洞
+# ============================================================
+
+def add_treehole(content: str, author_name: str = "匿名用户"):
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO treehole (content, author_name, created_at) VALUES (?, ?, ?)",
+            (content, author_name, datetime.now().isoformat(timespec="seconds"))
+        )
+        return cur.lastrowid
+
+
+def get_treehole_list(limit: int = 100):
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, content, author_name, created_at FROM treehole ORDER BY created_at DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def delete_treehole(hole_id: int):
+    with get_connection() as conn:
+        conn.execute("DELETE FROM treehole WHERE id = ?", (hole_id,))
+
+
 if __name__ == "__main__":
     init_db()
+    seed_default_users()
     print(f"数据库初始化完成: {DB_PATH}")
     print("统计信息:", get_stats())

@@ -19,33 +19,45 @@
 
 <script setup>
 import { ref } from 'vue'
+import axios from 'axios'
+
 const loginFormRef = ref(null)
 const loginForm = ref({
   username: '',
   password: ''
 })
 
-const handleLogin = () => {
-  if(loginForm.value.username && loginForm.value.password){
-    localStorage.setItem('token', 'mock-admin-token-789')
-    localStorage.setItem('userType', 'admin')
-    alert("管理员登录成功")
-  }else{
+const handleLogin = async () => {
+  if (!loginForm.value.username || !loginForm.value.password) {
     alert("账号密码不能为空")
+    return
+  }
+  try {
+    const res = await axios.post('/api/admin/login', loginForm.value)
+    const data = res.data
+    if (data.code === 200) {
+      localStorage.setItem('token', data.data.token)
+      localStorage.setItem('userType', 'admin')
+      alert("管理员登录成功")
+    } else {
+      alert(data.msg || "登录失败")
+    }
+  } catch (err) {
+    console.error(err)
+    alert("请求异常，请检查后端服务是否启动")
   }
 }
-
 </script>
 
 <style scoped>
-.login-container{
-  height:100vh;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  background-color:#eef1f6;
+.login-container {
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #eef1f6;
 }
-.login-card{
-  width:400px;
+.login-card {
+  width: 400px;
 }
 </style>

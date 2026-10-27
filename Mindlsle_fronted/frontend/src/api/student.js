@@ -1,27 +1,55 @@
 import request from './request'
 
-// 学生登录
-export function studentLogin(data){
+export function studentLogin(data) {
   return request({
-    url:'/api/student/login',
-    method:'post',
+    url: '/api/student/login',
+    method: 'post',
     data
   })
 }
 
-// 获取树洞列表
-export function getTreeHoleList(){
+export function getTreeHoleList() {
   return request({
-    url:'/api/treehole/list',
-    method:'get'
+    url: '/api/treehole/list',
+    method: 'get'
   })
 }
 
-// 发布树洞
-export function postTreeHole(data){
+export function postTreeHole(data) {
   return request({
-    url:'/api/treehole/add',
-    method:'post',
+    url: '/api/treehole/add',
+    method: 'post',
     data
+  })
+}
+
+export function sendChatMessage(data) {
+  return request({
+    url: '/api/chat/send',
+    method: 'post',
+    data
+  })
+}
+
+export function getChatSessions(student_id) {
+  return request({
+    url: '/api/chat/sessions',
+    method: 'get',
+    params: { student_id }
+  })
+}
+
+export function getChatHistory(session_id) {
+  return request({
+    url: '/api/chat/history',
+    method: 'get',
+    params: { session_id }
+  })
+}
+
+export function endChatSession(session_id) {
+  return request({
+    url: `/api/chat/sessions/${session_id}/end`,
+    method: 'post'
   })
 }

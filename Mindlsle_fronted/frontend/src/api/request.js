@@ -1,8 +1,8 @@
 import axios from 'axios'
 
 const service = axios.create({
-  baseURL: 'http://localhost:8080', //后端端口，根据你的后端修改
-  timeout: 5000
+  baseURL: '',
+  timeout: 10000
 })
 
 // 请求拦截：自动携带token
