@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List, Optional
 #   包导入   python -c "from ai_agents.coordinator import ..."
 #   直接运行 python ai_agents/coordinator.py
 try:
+    from ai_agents import llm
     from ai_agents.protocols import AIPMessage, MsgType, new_message
     from ai_agents.prompts import (
         CBT_AGENT_PROMPT,
@@ -32,6 +33,7 @@ try:
         SAFETY_AGENT_PROMPT,
     )
 except ImportError:  # 兜底：直接运行脚本时，脚本所在目录已在 sys.path
+    import llm
     from protocols import AIPMessage, MsgType, new_message
     from prompts import (
         CBT_AGENT_PROMPT,
@@ -78,6 +80,29 @@ RESPONSE_TEMPLATES: Dict[str, str] = {
         "愿意的话，能和我说说发生了什么吗？"
     ),
 }
+
+# 协调智能体整合统一回复的 Prompt（LLM 模式启用；未启用 LLM 时走 RESPONSE_TEMPLATES）
+FINAL_SYSTEM_PROMPT: str = """\
+[角色]
+你是 MindIsle（心屿）多智能体系统的协调智能体。你综合运用 ACPs 协议下三位专业
+智能体的能力（安全评估一票否决、共情陪伴、认知行为 CBT），面向 {age} 岁学生
+给出温暖、安全、简短、符合其年龄认知水平的回复。
+
+[当前风险等级]
+{risk_level_display}
+
+[必须遵守的红线]
+1. red 高危：优先安抚情绪，必须明确建议联系可信任的成年人或拨打 24 小时
+   心理援助热线 {hotline}；绝不鼓励压抑或“想开一点”。
+2. orange：先共情，再明确建议求助老师/家长/心理老师，不替学生做诊断。
+3. yellow：共情 + 温和引导 + 给 1-2 条当下就能做的小建议。
+4. green：自然温暖的陪伴式回应，可追问细节，让对话延续下去。
+5. 不评判、不说教、不诊断、不贴标签；语言口语化，不使用心理学术语堆砌。
+
+[输出要求]
+只回复直接对学生说的 50-180 字内容：不要任何 JSON、不要前缀后缀、不要引号包装、
+不要提及“风险等级”“智能体”“规则”等系统内部概念。
+"""
 
 # ---------------------------------------------------------------------------
 # 本地兜底风险评估（仅当 backend/risk.py 无法导入时启用）
@@ -193,6 +218,7 @@ class MultiAgentCoordinator:
         self.max_negotiation_rounds: int = max_negotiation_rounds
 
         self.last_result: Optional[Dict[str, Any]] = None       # 最近一次对话结果
+        self.last_final_response: str = ""                      # 最近一次整合回复（避免重复调用 LLM）
         self.collaboration_log: List[AIPMessage] = []           # AIP 报文协作日志
 
     # ------------------------------------------------------------------
@@ -254,6 +280,7 @@ class MultiAgentCoordinator:
         user_text: str,
         risk: Dict[str, Any],
         session_id: str = "",
+        history: Optional[List[Dict[str, str]]] = None,
     ) -> List[AIPMessage]:
         """组织一次 ACPs/AIP 内部协商，返回完整报文列表。
 
@@ -357,10 +384,12 @@ class MultiAgentCoordinator:
                 ))
 
         # ---- Step 5：协调智能体整合统一回复 ----
+        final_response = self.build_response(user_text, risk_level, history=history)
+        self.last_final_response = final_response  # 供 process_dialogue 直接复用，避免重复调用 LLM
         msgs.append(new_message(
             COORDINATOR, "all", MsgType.INTEGRATE_RESPONSE,
             payload={
-                "final_response": self.build_response(user_text, risk_level),
+                "final_response": final_response,
                 "action": self.decide_action(risk_level),
                 "risk_level": risk_level,
                 "routed_agents": routed,
@@ -369,25 +398,73 @@ class MultiAgentCoordinator:
         ))
         return msgs
 
+    def _build_llm_messages(
+        self,
+        user_text: str,
+        risk_level: str,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> List[Dict[str, str]]:
+        """把 system prompt + 多轮历史 + 当前用户输入拼成 OpenAI messages 列表。"""
+        risk_display = {
+            "green": "green（绿/低风险：日常分享或一般情绪波动）",
+            "yellow": "yellow（黄/中风险：压力、焦虑、难过等负面情绪）",
+            "orange": "orange（橙/较高风险：恐惧、受欺凌、被威胁等）",
+            "red": "red（红/高危：自杀/自伤意念等）",
+        }.get(risk_level, risk_level)
+
+        system_prompt = FINAL_SYSTEM_PROMPT.format(
+            age=self.age,
+            risk_level_display=risk_display,
+            hotline=self.emergency_hotline,
+        )
+        messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+        for item in (history or [])[-8:]:  # 只携带最近 8 条，避免上下文超长
+            role = item.get("role")
+            content = str(item.get("content", "")).strip()
+            if role in ("user", "assistant") and content:
+                messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": user_text})
+        return messages
+
     # ------------------------------------------------------------------
     # 4. 统一回复生成
     # ------------------------------------------------------------------
-    def build_response(self, user_text: str, risk_level: str) -> str:
-        """按风险等级生成最终回复（高危输出应急话术，其余输出分级兜底话术）。"""
+    def build_response(
+        self,
+        user_text: str,
+        risk_level: str,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
+        """按风险等级生成最终回复（接入 LLM，支持多轮记忆）。
+
+        - red 高危：不交给 LLM 自由发挥，直接输出含热线的应急话术；
+        - 其他等级：LLM 已启用时调用大模型生成个性化回复；
+        - LLM 未启用 / 调用失败：回退到 RESPONSE_TEMPLATES 分级兜底话术。
+        """
+        fallback = RESPONSE_TEMPLATES.get(risk_level, RESPONSE_TEMPLATES["green"])
         if risk_level == "red":
             return self.EMERGENCY_RESPONSE_TEMPLATE.format(
                 hotline=self.emergency_hotline
             )
-        return RESPONSE_TEMPLATES.get(risk_level, RESPONSE_TEMPLATES["green"])
+        if not llm.is_enabled():
+            return fallback
+        messages = self._build_llm_messages(user_text, risk_level, history)
+        return llm.safe_chat(messages, fallback=fallback, temperature=0.7, max_tokens=512)
 
     # ------------------------------------------------------------------
     # 5. 对外主入口
     # ------------------------------------------------------------------
     def process_dialogue(
-        self, user_text: str, session_id: str = ""
+        self,
+        user_text: str,
+        session_id: str = "",
+        history: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         """处理一段用户输入，返回统一对话结果（对外主入口）。
 
+        :param history: 可选，该会话此前消息的历史列表，形如
+            [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
+            用于给 LLM 提供多轮对话记忆；None 表示无语境（首轮）。
         返回结构（与 src/agent_core.py 兼容，可 drop-in 替换）：
             {
                 "risk_level":    str,   # green | yellow | orange | red
@@ -424,7 +501,7 @@ class MultiAgentCoordinator:
         is_vetoed: bool = (risk_level == "red") or self.is_critical_fn(risk_level)
 
         # 3) 组织 ACPs/AIP 协商，记录协作日志
-        messages = self.negotiate(text, risk, session_id=session_id)
+        messages = self.negotiate(text, risk, session_id=session_id, history=history)
         self.collaboration_log = messages
 
         # 4) 整合输出
@@ -437,7 +514,8 @@ class MultiAgentCoordinator:
             "risk_score": risk.get("score", 0.0),
             "risk_matched": risk.get("matched", []),
             "is_vetoed": is_vetoed,
-            "response_text": self.build_response(text, risk_level),
+            "response_text": getattr(self, "last_final_response", None)
+            or self.build_response(text, risk_level, history=history),
             "action": self.decide_action(risk_level),
             "reason": reason,
             "routed_agents": self.dispatch(risk_level),

@@ -12,10 +12,30 @@ PROJECT_ROOT = os.path.dirname(BASE_DIR)
 sys.path.insert(0, BASE_DIR)
 sys.path.insert(0, PROJECT_ROOT)
 
+def _load_dotenv(path: str) -> None:
+    """极简 .env 加载器（不依赖 python-dotenv）：把 KEY=VALUE 写入进程环境变量，
+    已存在的环境变量（如 shell 中显式导出）优先，不会被覆盖。"""
+    if not os.path.exists(path):
+        return
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip("\"'")
+            if key and not os.environ.get(key):
+                os.environ[key] = value
+
+# 启动时加载根目录 .env（LLM_API_KEY 等敏感配置放在这里，.gitignore 已忽略 .env）
+_load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+
 import database as db
 import risk
 import report as report_mod
-from src.agent_core import ACPSMultiAgentOrchestrator
+from ai_agents.coordinator import MultiAgentCoordinator
+from ai_agents import llm as llm_client
 
 db.init_db()
 db.seed_default_users()
@@ -30,7 +50,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-orchestrator = ACPSMultiAgentOrchestrator()
+orchestrator = MultiAgentCoordinator()
 security = HTTPBearer(auto_error=False)
 
 
@@ -61,7 +81,17 @@ def root():
 @app.get("/health")
 def health():
     stats = db.get_stats()
-    return ok(stats)
+    llm_cfg = llm_client.get_config()
+    return ok({
+        "stats": stats,
+        "llm": {
+            "enabled": llm_client.is_enabled(),
+            "status_text": llm_client.status_text(),
+            "base": llm_cfg["base"],
+            "model": llm_cfg["model"],
+            "key_set": bool(llm_cfg["key"]),
+        },
+    })
 
 
 # ============================================================
@@ -175,10 +205,18 @@ def chat_send(req: ChatSendRequest):
 
     user_text = req.message.strip()
     db.add_message(session_id, "user", user_text)
-
+    # 组装多轮对话历史（去掉刚插入的当前 user 消息），供 LLM 上下文记忆；
+    # 协调器会自行截取最近 8 条。无历史时传空列表等价于首轮对话。
+    raw_messages = db.get_messages(session_id)
+    history = [
+        {"role": m["role"], "content": m["content"]}
+        for m in raw_messages[:-1]
+        if m["role"] in ("user", "assistant")
+    ]
     risk_result = risk.assess(user_text)
-    ai_result = orchestrator.process_dialogue(user_text)
-
+    ai_result = orchestrator.process_dialogue(
+        user_text, session_id=str(session_id), history=history
+    )
     db.add_message(session_id, "assistant", ai_result["response_text"])
     db.add_risk_assessment(
         session_id,
