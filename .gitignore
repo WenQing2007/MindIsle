@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+\n# SQLite 数据库文件
+*.db
+*.db-journal
+data/
+output/
