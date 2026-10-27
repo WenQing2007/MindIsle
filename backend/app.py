@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import sys
@@ -11,9 +11,11 @@ sys.path.insert(0, PROJECT_ROOT)
 
 import database as db
 import risk
-from src.agent_core import ACPSMultiAgentOrchestrator
+from ai_agents.coordinator import MultiAgentCoordinator
 
 db.init_db()
+# 确保演示登录账号存在（2025212121 / 123456），已存在则忽略
+db.add_test_student()
 app = FastAPI(title="MindIsle 心屿后端", version="0.1.0")
 
 # 官方跨域中间件，删除了之前冲突的自定义CORS
@@ -25,7 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-orchestrator = ACPSMultiAgentOrchestrator()
+orchestrator = MultiAgentCoordinator()
 
 # 登录请求体模型
 class LoginRequest(BaseModel):
@@ -48,6 +50,19 @@ def student_login(req: LoginRequest):
             "username": student["username"]
         }
     }
+
+def _student_id_from_token(authorization: str | None) -> int | None:
+    """从 Authorization: Bearer token_<id> 解析出 student_id；失败返回 None。"""
+    if not authorization:
+        return None
+    # 兼容 "Bearer token_1" / "token_1"
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token.startswith("token_"):
+        return None
+    suffix = token.removeprefix("token_")
+    if not suffix.isdigit():
+        return None
+    return int(suffix)
 
 class ChatRequest(BaseModel):
     student_id: int
@@ -80,7 +95,7 @@ def chat(req: ChatRequest):
     user_text = req.message.strip()
     db.add_message(session_id, "user", user_text)
     risk_result = risk.assess(user_text)
-    ai_result = orchestrator.process_dialogue(user_text)
+    ai_result = orchestrator.process_dialogue(user_text, session_id=str(session_id))
     db.add_message(session_id, "assistant", ai_result["response_text"])
     db.add_risk_assessment(
         session_id,
@@ -99,6 +114,9 @@ def chat(req: ChatRequest):
         "is_vetoed": is_vetoed,
         "action": ai_result["action"],
         "reason": ai_result["reason"],
+        "routed_agents": ai_result.get("routed_agents", []),
+        "hotline": ai_result.get("hotline"),
+        "collaboration_log": orchestrator.get_collaboration_log(),
     }
 
 @app.get("/chat/sessions/{student_id}")
@@ -118,3 +136,79 @@ def get_chat_history(session_id: int):
 def end_chat(session_id: int):
     db.end_session(session_id)
     return {"session_id": session_id, "status": "ended"}
+
+
+# ============================================================
+# 树洞
+# ============================================================
+
+class TreeHoleRequest(BaseModel):
+    content: str
+    is_anonymous: int = 1
+
+
+@app.post("/api/treehole/add")
+def add_treehole(req: TreeHoleRequest, authorization: str | None = Header(default=None)):
+    if not req.content.strip():
+        raise HTTPException(status_code=400, detail="内容不能为空")
+    student_id = _student_id_from_token(authorization)
+    if student_id is None:
+        # 前端未带 token 时无法记录发布人；回退为匿名发布
+        student_id = None
+    record = db.add_treehole(student_id, req.content.strip(), is_anonymous=req.is_anonymous)
+    return {"code": 200, "msg": "发布成功", "data": record}
+
+
+@app.get("/api/treehole/list")
+def list_treeholes():
+    records = db.get_all_treeholes()
+    return {"code": 200, "msg": "ok", "data": records}
+
+
+@app.get("/api/treehole/my")
+def my_treeholes(authorization: str | None = Header(default=None)):
+    student_id = _student_id_from_token(authorization)
+    if student_id is None:
+        raise HTTPException(status_code=401, detail="未登录")
+    records = db.get_treeholes_by_student(student_id)
+    return {"code": 200, "msg": "ok", "data": records}
+
+
+# ============================================================
+# 心理报告
+# ============================================================
+
+class ReportRequest(BaseModel):
+    session_id: int
+    report_type: str = "counseling"
+    title: str = ""
+    content: str = ""
+
+
+@app.post("/api/report/add")
+def add_report(req: ReportRequest):
+    if not req.session_id:
+        raise HTTPException(status_code=400, detail="session_id 不能为空")
+    report_id = db.add_report(
+        req.session_id,
+        req.report_type,
+        req.title or "心理报告",
+        req.content,
+    )
+    row = db.get_report(report_id)
+    return {"code": 200, "msg": "报告已生成", "data": row}
+
+
+@app.get("/api/report/list/{session_id}")
+def list_reports_by_session(session_id: int):
+    records = db.get_reports_by_session(session_id)
+    return {"code": 200, "msg": "ok", "data": records}
+
+
+@app.get("/api/report/my")
+def my_reports(authorization: str | None = Header(default=None)):
+    student_id = _student_id_from_token(authorization)
+    if student_id is None:
+        raise HTTPException(status_code=401, detail="未登录")
+    records = db.get_reports_by_student(student_id)
+    return {"code": 200, "msg": "ok", "data": records}
