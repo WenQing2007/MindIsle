@@ -158,6 +158,30 @@ python tests\test_agent_core.py
 
 预期结果：`Ran 5 tests ... OK`，覆盖“一票否决”与“共情陪伴”两条分支及边界情况。
 
+### 接入大模型（LLM 自动回复，可选）
+
+聊天默认使用内置分级模板话术；如需由大模型生成个性化回复，只需在项目根目录
+建立 `.env` 文件（模板见 `.env.example`，`.env` 已被 `.gitignore` 忽略，Key 不会入库）：
+
+```bash
+# 复制模板并填入你的 API Key
+copy .env.example .env
+```
+
+```dotenv
+LLM_ENABLED=true
+LLM_API_KEY=sk-你的密钥
+LLM_API_BASE=https://api.deepseek.com/v1   # OpenAI 兼容地址均可（通义/智谱/硅基流动/Moonshot/Ollama）
+LLM_MODEL=deepseek-chat
+```
+
+建议参考 `GET /health` 返回的 `llm` 字段确认接入状态。机制说明：
+
+- **多轮记忆**：后端自动携带当前会话最近 8 条历史给模型；
+- **高危一票否决**：`red` 级输入**不会**交给大模型自由发挥，仍输出含 24 小时
+  心理援助热线的应急话术（红线兜底）；
+- **故障降级**：未配置 Key / 请求失败 / 超时时自动回退到内置分级模板，保证系统离线可用。
+
 ### 运行主程序
 
 ```bash
