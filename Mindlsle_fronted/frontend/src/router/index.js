@@ -30,6 +30,11 @@ const routes = [
     name: 'StudentChat',
     component: () => import('../views/student/Chat.vue')
   },
+  {
+    path: '/student/reports',
+    name: 'StudentReports',
+    component: () => import('../views/student/ReportList.vue')
+  },
 
   {
     path: '/teacher',

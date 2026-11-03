@@ -21,10 +21,10 @@
         </el-card>
       </el-col>
       <el-col :span="8">
-        <el-card shadow="hover" class="feature-card" @click="genReport">
+        <el-card shadow="hover" class="feature-card" @click="$router.push('/student/reports')">
           <div class="feature-icon report-icon">📄</div>
           <div class="feature-title">我的心理报告</div>
-          <div class="feature-desc">生成你的个性化心理成长报告</div>
+          <div class="feature-desc">查看历史报告 · 生成新报告</div>
         </el-card>
       </el-col>
     </el-row>

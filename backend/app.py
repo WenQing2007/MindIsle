@@ -362,6 +362,23 @@ def gen_class_report(class_name: str):
     return ok({"filepath": filepath})
 
 
+@app.get("/api/report/list")
+def report_list(student_id: int):
+    student = db.get_student(student_id)
+    if not student:
+        return fail(404, f"学生 {student_id} 不存在")
+    reports = db.get_reports_by_student(student_id)
+    return ok(reports)
+
+
+@app.get("/api/report/detail")
+def report_detail(report_id: int):
+    report = db.get_report(report_id)
+    if not report:
+        return fail(404, f"报告 {report_id} 不存在")
+    return ok(report)
+
+
 @app.get("/api/report/download")
 def download_report(filepath: str):
     if not os.path.isfile(filepath):

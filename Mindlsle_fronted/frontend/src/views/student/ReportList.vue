@@ -1,10 +1,15 @@
 <template>
   <div class="report-container">
-    <h3>我的心理报告</h3>
-    <!-- 加载骨架 -->
+    <div class="top-bar">
+      <h3>我的心理报告</h3>
+      <div>
+        <el-button size="small" type="primary" @click="genNewReport">✨ 生成新报告</el-button>
+        <el-button size="small" @click="loadReport">🔄 刷新</el-button>
+      </div>
+    </div>
+
     <el-skeleton :loading="loading" animated>
       <div class="card-wrap">
-        <!-- 报告卡片 -->
         <el-card
           v-for="item in reportList"
           :key="item.id"
@@ -23,16 +28,16 @@
 
     <el-empty v-if="!loading && reportList.length === 0" description="暂无心理报告"></el-empty>
 
-    <!-- 弹窗：查看完整报告 -->
     <el-dialog v-model="dialogVisible" title="报告详情" width="70%">
       <div class="detail-content">
         <p><strong>报告类型：</strong>{{ currentReport.report_type }}</p>
+        <p><strong>报告标题：</strong>{{ currentReport.title }}</p>
         <p><strong>生成时间：</strong>{{ currentReport.created_at }}</p>
         <div style="margin-top:12px;">{{ currentReport.content }}</div>
       </div>
       <template #footer>
         <el-button @click="dialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="exportPdf">导出PDF</el-button>
+        <el-button type="primary" @click="exportPdf">下载 PDF</el-button>
       </template>
     </el-dialog>
   </div>
@@ -41,48 +46,23 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-// import { getMyReport } from '@/api/student'
+import axios from 'axios'
+import { getReportList, getReportDetail } from '@/api/student'
 
 const reportList = ref([])
 const dialogVisible = ref(false)
 const currentReport = ref({})
 const loading = ref(false)
 
-// 打开详情弹窗
-const openDetail = (row) => {
-  currentReport.value = row
-  dialogVisible.value = true
-}
-
-// 加载报告
 const loadReport = async () => {
+  const sid = localStorage.getItem('student_id')
+  if (!sid) {
+    ElMessage.warning('请先重新登录')
+    return
+  }
   loading.value = true
   try {
-    // ========= mock 假数据，本地调试用 =========
-    const mockRes = {
-      code: 200,
-      data: [
-        {
-          id: 1,
-          report_type: '情绪测评报告',
-          title: 'SCL-90心理健康筛查报告',
-          created_at: '2026-10-20 14:30',
-          content: '本次测评结果显示你的情绪状态整体平稳，偶尔有焦虑倾向。\n建议：规律作息，多进行户外活动，有烦恼可以去AI倾诉聊聊。'
-        },
-        {
-          id: 2,
-          report_type: 'AI对话分析报告',
-          title: '智能对话心理小结',
-          created_at: '2026-10-22 16:10',
-          content: '在最近的对话中，你主要压力来源是学业任务较多。\n心理建议：合理拆分任务，不要一次性给自己太高要求。'
-        }
-      ]
-    }
-    const res = mockRes
-
-    // ========= 后端通了之后，注释上面mock，启用下面一行 =========
-    // const res = await getMyReport()
-
+    const res = await getReportList(sid)
     if (res.code === 200) {
       reportList.value = res.data
     } else {
@@ -96,9 +76,52 @@ const loadReport = async () => {
   }
 }
 
-// 导出PDF（先占位，后面装html2pdf再实现函数内容）
+const openDetail = async (row) => {
+  try {
+    const res = await getReportDetail(row.id)
+    if (res.code === 200) {
+      currentReport.value = res.data
+      dialogVisible.value = true
+    } else {
+      currentReport.value = row
+      dialogVisible.value = true
+    }
+  } catch (err) {
+    console.error(err)
+    currentReport.value = row
+    dialogVisible.value = true
+  }
+}
+
+const genNewReport = async () => {
+  const sid = localStorage.getItem('student_id')
+  if (!sid) {
+    ElMessage.warning('请先重新登录')
+    return
+  }
+  ElMessage.info('正在生成报告，请稍候...')
+  try {
+    const res = await axios.post(`/api/report/student/${sid}`)
+    const data = res.data
+    if (data.code === 200) {
+      ElMessage.success('报告已生成！')
+      setTimeout(() => loadReport(), 500)
+    } else {
+      ElMessage.error(data.msg || '生成失败')
+    }
+  } catch (err) {
+    console.error(err)
+    ElMessage.error('生成报告失败')
+  }
+}
+
 const exportPdf = () => {
-  ElMessage.info('导出功能待实现')
+  const path = currentReport.value.file_path
+  if (!path) {
+    ElMessage.warning('该报告没有 PDF 文件')
+    return
+  }
+  window.open(`/api/report/download?filepath=${encodeURIComponent(path)}`, '_blank')
 }
 
 onMounted(() => {
@@ -111,6 +134,11 @@ onMounted(() => {
   max-width: 900px;
   margin: 0 auto;
   padding: 20px;
+}
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 .card-wrap {
   display: grid;
