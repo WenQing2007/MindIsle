@@ -8,6 +8,14 @@ export function studentLogin(data) {
   })
 }
 
+export function studentRegister(data) {
+  return request({
+    url: '/api/student/register',
+    method: 'post',
+    data
+  })
+}
+
 export function getTreeHoleList() {
   return request({
     url: '/api/treehole/list',

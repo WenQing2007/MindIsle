@@ -11,6 +11,11 @@ const routes = [
     component: () => import('../views/student/Login.vue')
   },
   {
+    path: '/student/register',
+    name: 'StudentRegister',
+    component: () => import('../views/student/Register.vue')
+  },
+  {
     path: '/student/home',
     name: 'StudentHome',
     component: () => import('../views/student/Home.vue')
@@ -64,7 +69,7 @@ const router = createRouter({
 
 export default router
 router.beforeEach((to, from, next) => {
-  const whiteList = ['/student/login', '/teacher/login', '/admin/login']
+  const whiteList = ['/student/login', '/student/register', '/teacher/login', '/admin/login']
   const token = localStorage.getItem('token')
 
   if (token) {

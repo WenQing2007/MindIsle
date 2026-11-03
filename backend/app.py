@@ -65,8 +65,40 @@ def health():
 
 
 # ============================================================
-# 登录 / 登出
+# 注册 / 登录 / 登出
 # ============================================================
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    name: str
+    gender: Optional[str] = None
+    age: Optional[int] = None
+    school: Optional[str] = None
+    grade: Optional[str] = None
+
+
+@app.post("/api/student/register")
+def student_register(req: RegisterRequest):
+    if not req.username or not req.password or not req.name:
+        return fail(400, "用户名、密码、姓名不能为空")
+    if len(req.username) < 3:
+        return fail(400, "用户名至少3个字符")
+    if len(req.password) < 6:
+        return fail(400, "密码至少6个字符")
+    result, err = db.register_student(
+        username=req.username,
+        password=req.password,
+        name=req.name,
+        gender=req.gender,
+        age=req.age,
+        school=req.school,
+        grade=req.grade,
+    )
+    if err:
+        return fail(400, err)
+    return ok(result, msg="注册成功")
+
 
 class LoginRequest(BaseModel):
     username: str

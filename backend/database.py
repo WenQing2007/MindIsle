@@ -323,6 +323,12 @@ def _gen_token() -> str:
     return secrets.token_hex(24)
 
 
+def username_exists(username: str) -> bool:
+    with get_connection() as conn:
+        row = conn.execute("SELECT COUNT(*) FROM user_account WHERE username = ?", (username,)).fetchone()
+        return row[0] > 0
+
+
 def create_user(username: str, password: str, role: str, student_id: int | None = None):
     pw_hash = _hash_password(password)
     with get_connection() as conn:
@@ -331,6 +337,14 @@ def create_user(username: str, password: str, role: str, student_id: int | None 
             (username, pw_hash, role, student_id, datetime.now().isoformat(timespec="seconds"))
         )
         return cur.lastrowid
+
+
+def register_student(username: str, password: str, name: str, gender=None, age=None, school=None, grade=None):
+    if username_exists(username):
+        return None, "用户名已被占用"
+    student_id = add_student(name, gender=gender, age=age, school=school, grade=grade)
+    user_id = create_user(username, password, "student", student_id)
+    return {"user_id": user_id, "student_id": student_id}, None
 
 
 def authenticate(username: str, password: str):

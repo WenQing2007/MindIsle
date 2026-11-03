@@ -12,6 +12,9 @@
         <el-form-item>
           <el-button type="primary" @click="handleLogin">登录</el-button>
         </el-form-item>
+        <el-form-item>
+          <el-link type="primary" @click="goRegister">没有账号？去注册</el-link>
+        </el-form-item>
       </el-form>
     </el-card>
   </div>
@@ -48,6 +51,9 @@ const handleLogin = async () => {
     console.error(err)
     alert("请求异常，请检查后端服务是否启动")
   }
+}
+const goRegister = () => {
+  router.push('/student/register')
 }
 </script>
 <style scoped>
