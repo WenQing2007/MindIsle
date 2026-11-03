@@ -169,7 +169,11 @@ const send = async () => {
       messages.value.push({ role: 'assistant', content: '⚠️ 发送失败：' + (res.msg || '未知错误') })
     }
   } catch (err) {
-    messages.value.push({ role: 'assistant', content: '⚠️ 网络异常，请检查后端服务是否启动' })
+    const timedOut = err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '')
+    const msg = timedOut
+      ? '⚠️ 回复生成超时了（大模型生成较慢），请稍后重试'
+      : '⚠️ 网络异常，请确认后端服务已启动（python -m uvicorn backend.app:app --port 8000）'
+    messages.value.push({ role: 'assistant', content: msg })
   } finally {
     loading.value = false
     scrollBottom()
