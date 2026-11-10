@@ -21,7 +21,7 @@
             :class="{ active: s.id === currentSessionId }"
             @click="switchSession(s.id)"
           >
-            <div style="font-size:13px">{{ s.started_at }}</div>
+            <div style="font-size:13px"><b>会话 #{{ s.id }}</b> · {{ s.started_at }}</div>
             <div style="font-size:12px; color:#999">
               {{ s.ended_at ? '已结束' : '进行中' }}
             </div>
@@ -41,9 +41,8 @@
               <div class="avatar">{{ m.role === 'user' ? '我' : 'AI' }}</div>
               <div class="bubble" :class="m.role === 'user' ? 'bubble-user' : 'bubble-ai'">
                 <div style="white-space:pre-wrap">{{ m.content }}</div>
-                <div v-if="m.risk_level_cn" class="risk-tag" :class="'risk-' + m.risk_level">
-                  风险评估：{{ m.risk_level_cn }} {{ m.risk_matched ? '· ' + m.risk_matched.join('、') : '' }}
-                </div>
+                <!-- 风险评估对低等级（绿/黄/橙）不向学生展示标签或命中词，避免标签感；
+                     仅红色高危时展示热线横幅（一票否决，伦理要求不可隐藏危机信号）。 -->
                 <div v-if="m.is_vetoed" class="veto-alert">
                   ⚠️ AI 已触发安全保护，请立即拨打全国24小时心理援助热线：<b>{{ m.crisis_hotline }}</b>
                 </div>
@@ -185,8 +184,13 @@ const clearAll = () => {
   currentSessionId.value = null
 }
 
-onMounted(() => {
-  loadSessions()
+onMounted(async () => {
+  // 先刷新会话列表
+  await loadSessions()
+  // 仅当尚未开始新对话时，一次性自动恢复最近会话（避免与用户操作并发竞态覆盖）
+  if (!currentSessionId.value && sessionList.value.length) {
+    await switchSession(sessionList.value[0].id)
+  }
 })
 </script>
 
