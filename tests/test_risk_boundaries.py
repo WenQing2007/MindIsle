@@ -10,8 +10,8 @@ tests/test_risk_boundaries.py
   [多级叠加] 同一句同时命中多级关键词时，按**最高**风险等级裁定（安全优先）；
   [结果契约] score / level_db / matched / matched_level 之间的映射一致性；
   [路由/动作] 四级风险 → 正确的智能体路由表与系统动作；
-  [已知误判] 关键词重叠导致 '怕考试 / 害怕考试' 被偏高判为 orange
-             （记录当前行为作为后续优化输入，不改变设计意图）。
+  [重叠修复] 关键词重叠按“最长匹配优先”裁决：'害怕考试'（考试焦虑）判为
+             yellow，不再被 '害怕 / 怕' 子串误拆成 orange；实义橙色信号不受影响。
 
 运行方式（在项目根目录下）：
   python -m unittest discover -s tests -v
@@ -99,7 +99,7 @@ class TestRiskHighestPriority(unittest.TestCase):
         """green+yellow→yellow；含 orange→orange；任何含红词→red。"""
         cases = [
             ("虽然压力大但今天很开心", "yellow", "开心", False),
-            ("确实被欺负了很难受但妈妈说会帮我", "orange", "欺负", False),
+            ("确实被欺负了很难受但妈妈说会帮我", "orange", "被欺负", False),
             ("最近压力大但要是真要被威胁就报警", "orange", "威胁", False),
             ("压力好大，有时候真想跳楼", "red", "跳楼", True),
             ("今天很开心但难过的事也常有", "yellow", "难过", False),
@@ -219,25 +219,34 @@ class TestCoordinatorRoutingContract(unittest.TestCase):
                 self.assertEqual(result["routed_agents"], RISK_ROUTING[level])
 
 
-class TestKnownOverlapEdgeCase(unittest.TestCase):
+class TestOverlapResolution(unittest.TestCase):
     """
-    已知误判点（不改变「安全优先」设计，仅固定并记录当前行为）：
+    关键词重叠的“最长匹配优先”修复验收：
 
-    关键词表把 '害怕 / 怕' 归为 orange（受欺凌/恐惧），把 '害怕考试' 归为 yellow。
-    由于 '害怕考试' 中同时包含 '害怕'、'怕'，会导致 '我害怕考试' 被偏高判为 orange
-    （需通知心理教师），而不是语义更贴切的 yellow（考试焦虑）。
-
-    这里显式固定当前输出，防止未来改动无意识地改变行为；同时可作后续优化输入：
-    建议对关键词做「最长匹配优先 / 否定排除」处理。
+    1) '害怕考试 / 特害怕考试' 这类考试焦虑：其中 '害怕'/'怕'（橙）落在长词
+       '害怕考试'（黄）区间内，应按最长匹配判为 yellow，不再被误拆成 orange；
+    2) 独立的实义橙词（如 '被同学欺负了，很害怕' 中的 '害怕' 无更长词覆盖）
+       应保持 orange，确保安全识别能力没有因修复而减弱。
     """
 
     def setUp(self):
         self.coordinator = MultiAgentCoordinator()
 
-    def test_fear_of_exam_currently_flagged_orange(self):
-        result = self.coordinator.process_dialogue("我害怕考试，怕考不好")
+    def test_fear_of_exam_now_yellow(self):
+        """考试焦虑应判 yellow，不被 '害怕 / 怕' 子串抬高为 orange。"""
+        result = self.coordinator.process_dialogue("我特别害怕考试")
+        self.assertEqual(result["risk_level"], "yellow")
+        self.assertEqual(result["action"], ACTION_MAP["yellow"])
+        self.assertFalse(result["is_vetoed"])
+        # 命中的更贴切长词应出现在 matched 中
+        self.assertIn("害怕考试", result["risk_matched"])
+
+    def test_real_fear_still_orange(self):
+        """无更长词覆盖的独立实义橙词仍应为 orange（安全优先未弱化）。"""
+        result = self.coordinator.process_dialogue("我被同学欺负了，很害怕")
         self.assertEqual(result["risk_level"], "orange")
         self.assertEqual(result["action"], ACTION_MAP["orange"])
+        self.assertFalse(result["is_vetoed"])
 
 
 if __name__ == "__main__":

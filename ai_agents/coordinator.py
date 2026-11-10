@@ -129,15 +129,23 @@ _LOCAL_SCORES: Dict[str, float] = {"green": 0.1, "yellow": 0.35, "orange": 0.7, 
 def _local_assess(text: str) -> Dict[str, Any]:
     """与 backend/risk.py::assess 等价的本地兜底实现。"""
     text = text or ""
-    best_level, best_index = "green", 0
-    all_matched: List[str] = []
+    # 与 backend/risk.py::assess 一致的“最长匹配优先 + 区间重叠去重”
+    hits: List[Any] = []
     for level in _LOCAL_ORDER:
-        hits = [kw for kw in _LOCAL_KEYWORDS[level] if kw in text]
-        if hits:
-            all_matched.extend(hits)
-            idx = _LOCAL_ORDER.index(level)
-            if idx > best_index:
-                best_index, best_level = idx, level
+        li = _LOCAL_ORDER.index(level)
+        for kw in _LOCAL_KEYWORDS[level]:
+            pos = text.find(kw)
+            if pos != -1:
+                hits.append((li, kw, pos, pos + len(kw)))
+    hits.sort(key=lambda h: (-len(h[1]), h[0]))
+    adopted: List[Any] = []
+    for li, kw, s, e in hits:
+        overlapped = any(s < e2 and s2 < e for (_, _, s2, e2) in adopted)
+        if not overlapped:
+            adopted.append((li, kw, s, e))
+    adopted.sort(key=lambda h: (h[0], h[1]))
+    all_matched = [kw for (_, kw, _, _) in adopted]
+    best_level = _LOCAL_ORDER[max(h[0] for h in adopted)] if adopted else "green"
     return {
         "level": best_level,
         "level_db": {"green": "low", "yellow": "medium", "orange": "high", "red": "critical"}[best_level],
