@@ -356,6 +356,41 @@ class TestMultiAgentLLMIntegration(unittest.TestCase):
         self.assertEqual(mc.call_count, 1)
         self.assertEqual(result["response_text"], "真替你开心，是用功换来的！")
 
+    def test_multiagent_integrate_revision_messages_emitted(self):
+        """优先级四：多智能体协商时，真正发出并回收 REVISION_NOTICE 与
+        逐智能体的 INTEGRATE_REQUEST / INTEGRATE_RESPONSE 报文，
+        而不是只停留在脚本里宣称的协议类型。"""
+        with mock.patch("ai_agents.llm.is_enabled", return_value=False):
+            result = self.coordinator.process_dialogue(
+                "最近压力好大，晚上睡不着，有点难过"
+            )
+        self.assertEqual(result["risk_level"], "yellow")
+        msgs = self.coordinator.get_collaboration_log()
+
+        def has(sender, mtype):
+            return any(m["sender"] == sender and m["msg_type"] == mtype for m in msgs)
+
+        # 修订：协调器向 all 广播一次
+        self.assertTrue(has("coordinator", "REVISION_NOTICE"), "应广播 REVISION_NOTICE")
+        # 整合：协调器向每个路由智能体发 INTEGRATE_REQUEST，且各智能体回 INTEGRATE_RESPONSE
+        for agent in ("empathy_companion", "cognitive_behavior"):
+            self.assertTrue(
+                has("coordinator", "INTEGRATE_REQUEST"),
+                f"协调器应向 {agent} 等路由智能体发 INTEGRATE_REQUEST",
+            )
+            self.assertTrue(
+                has(agent, "INTEGRATE_RESPONSE"),
+                f"{agent} 应返回 INTEGRATE_RESPONSE",
+            )
+        # INTEGRATE_RESPONSE：仅限路由智能体返回的（协调器的最终广播不是意见回传）
+        integ_resp = [m for m in msgs
+                      if m["msg_type"] == "INTEGRATE_RESPONSE"
+                      and m["sender"] in ("empathy_companion", "cognitive_behavior")]
+        self.assertEqual(len(integ_resp), 2, "两个路由智能体都应回传 INTEGRATE_RESPONSE")
+        for m in integ_resp:
+            self.assertIn("final_opinion", m["payload"])
+            self.assertIn("revised_note", m["payload"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

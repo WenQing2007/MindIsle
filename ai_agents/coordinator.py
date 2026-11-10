@@ -698,6 +698,40 @@ class MultiAgentCoordinator:
                     reply_to=check.message_id,
                 ))
 
+        # ---- Step 4b：整合修订阶段（真正启用 REVISION_NOTICE + INTEGRATE_* 报文） ----
+        # 多智能体协商时：交叉校验后由协调器广播修订指令，并逐个请求/回收各智能体的
+        # 最终整合意见。此阶段让 AIP 协议里"修订→整合"的报文类型真正投入使用，
+        # 并把各智能体的最终意见回灌到 last_agent_outputs，供 Step5 整合回复参考。
+        if risk_level in ("yellow", "orange") and len(routed) >= 2:
+            msgs.append(new_message(
+                COORDINATOR, "all", MsgType.REVISION_NOTICE,
+                payload={
+                    "instruction": "请各专业智能体依据交叉校验结果复核并最终确定各自建议。",
+                    "base": "cross_check",
+                    "risk_level": risk_level,
+                },
+                session_id=session_id,
+            ))
+            for agent in routed:
+                opinion = agent_outputs.get(agent)
+                if opinion is None:
+                    opinion = self._agent_rule_output(agent, risk_level, user_text)
+                req = new_message(
+                    COORDINATOR, agent, MsgType.INTEGRATE_REQUEST,
+                    payload={"risk_level": risk_level, "revised": True},
+                    session_id=session_id,
+                )
+                msgs.append(req)
+                msgs.append(new_message(
+                    agent, COORDINATOR, MsgType.INTEGRATE_RESPONSE,
+                    payload={
+                        "final_opinion": opinion,
+                        "revised_note": "经交叉校验后确认，未作额外改动",
+                    },
+                    session_id=session_id,
+                    reply_to=req.message_id,
+                ))
+
         # ---- Step 5：协调智能体整合统一回复 ----
         final_response = self.build_response(user_text, risk_level, history=history)
         self.last_final_response = final_response  # 供 process_dialogue 直接复用，避免重复调用 LLM
