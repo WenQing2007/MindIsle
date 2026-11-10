@@ -19,11 +19,15 @@ FONT_REGULAR = r"C:\Windows\Fonts\simhei.ttf"
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output")
 
 
+FONT_REGULAR = r"C:\Windows\Fonts\simhei.ttf"
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output")
+
 class ChinesePDF(FPDF):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.add_font("CN", "", FONT_REGULAR)
+        self.add_font("CN", "", FONT_REGULAR, uni=True)
         self.set_auto_page_break(auto=True, margin=20)
+
 
     def header(self):
         if self.page_no() == 1:
