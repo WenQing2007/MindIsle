@@ -31,6 +31,7 @@ try:
         CBT_AGENT_PROMPT,
         COMPANION_AGENT_PROMPT,
         SAFETY_AGENT_PROMPT,
+        SCENARIO_DIRECTOR_AGENT_PROMPT,
     )
 except ImportError:  # 兜底：直接运行脚本时，脚本所在目录已在 sys.path
     import llm
@@ -39,6 +40,7 @@ except ImportError:  # 兜底：直接运行脚本时，脚本所在目录已在
         CBT_AGENT_PROMPT,
         COMPANION_AGENT_PROMPT,
         SAFETY_AGENT_PROMPT,
+        SCENARIO_DIRECTOR_AGENT_PROMPT,
     )
 
 # ---------------------------------------------------------------------------
@@ -52,7 +54,7 @@ VETO_AGENT: str = "safety_assessor"        # 安全评估智能体（一票否�
 RISK_ROUTING: Dict[str, List[str]] = {
     "green": ["empathy_companion"],                                # 低：共情陪伴
     "yellow": ["empathy_companion", "cognitive_behavior"],         # 中：共情 + CBT
-    "orange": ["empathy_companion", "cognitive_behavior"],         # 较高：共情 + CBT（并通知教师）
+    "orange": ["empathy_companion", "cognitive_behavior", "scenario_director"],  # 较高：共情 + CBT + 情景导演（并通知教师）
     "red": [VETO_AGENT],                                           # 高：仅安全评估，一票否决
 }
 
@@ -84,9 +86,9 @@ RESPONSE_TEMPLATES: Dict[str, str] = {
 # 协调智能体整合统一回复的 Prompt（LLM 模式启用；未启用 LLM 时走 RESPONSE_TEMPLATES）
 FINAL_SYSTEM_PROMPT: str = """\
 [角色]
-你是 MindIsle（心屿）多智能体系统的协调智能体。你综合运用 ACPs 协议下三位专业
-智能体的能力（安全评估一票否决、共情陪伴、认知行为 CBT），面向 {age} 岁学生
-给出温暖、安全、简短、符合其年龄认知水平的回复。
+你是 MindIsle（心屿）多智能体系统的协调智能体。你综合运用 ACPs 协议下四位专业
+智能体的能力（安全评估一票否决、共情陪伴、认知行为 CBT、情景导演场景演练），
+面向 {age} 岁学生给出温暖、安全、简短、符合其年龄认知水平的回复。
 
 [当前风险等级]
 {risk_level_display}
@@ -271,6 +273,24 @@ class MultiAgentCoordinator:
                 "risk_alert": risk_level,
                 "confidence": 0.85,
             }
+        if agent == "scenario_director":
+            return {
+                "role": "scenario_director",
+                "simulated_scene": (
+                    "想象这样一个场景：课间，几位同学围在一起，对着你取笑、起外号，"
+                    "周围还有人跟着笑起来，你站在原地，脸上火辣辣的，不知道该怎么办。"
+                ),
+                "character_roles": ["你", "取笑的同学", "围观的同伴"],
+                "coping_options": [
+                    "平静地说一句“请不要这样叫我，我不喜欢”，说完转身去找信任的朋友待在一起",
+                    "课后单独把这件事告诉班主任或心理老师，请他们出面协调处理",
+                    "先做几次深呼吸告诉自己：是他们做得不对，不是我的错，我不必用同样的方式回应",
+                ],
+                "role_play_line": "“请不要这样叫我，我不喜欢这样的称呼。”",
+                "safe_guard": "仅进行口头/想象演练，不鼓励任何争吵或对抗行为；演练后如有需要可求助家长或老师",
+                "risk_alert": risk_level,
+                "confidence": 0.8,
+            }
         return {"role": agent, "note": "规则版占位输出", "risk_alert": risk_level}
 
 
@@ -336,6 +356,7 @@ class MultiAgentCoordinator:
         agent_prompts = {
             "empathy_companion": COMPANION_AGENT_PROMPT,
             "cognitive_behavior": CBT_AGENT_PROMPT,
+            "scenario_director": SCENARIO_DIRECTOR_AGENT_PROMPT,
         }
         for agent in routed:
             prompt = agent_prompts.get(agent, "")
