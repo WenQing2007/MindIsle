@@ -107,7 +107,6 @@
               </el-button>
               <span class="mic-tip">按住说话，松开即可把语音识别成文字</span>
             </div>
-            </div>
             <el-input
               ref="inputRef"
               v-model="inputText"
