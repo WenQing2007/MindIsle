@@ -49,9 +49,9 @@
                 <button
                   v-if="m.role === 'assistant' && !loading"
                   class="voice-btn"
-                  @click="playVoice(m.content, idx)"
+                  @click="playingIndex === idx ? stopVoice() : playVoice(m.content, idx)"
                 >
-                  {{ playingIndex === idx ? '🔊 播放中…' : '🔊 朗读' }}
+                  {{ playingIndex === idx ? '⏹ 停止' : '🔊 朗读' }}
                 </button>
               </div>
             </div>
@@ -169,11 +169,27 @@ const emojiList = [
   '💪', '🫶', '🤲', '👐', '🙌', '🤙', '👋', '✌️',
 ]
 
-// ---- 语音对话：录音(STT 输入) + 朗读(TTS 输出) ----
+// ---- 语音对话：录音(STT 输入) + 朗读(TTS 输出，支持随时打断) ----
 const recorder = new VoiceRecorder()
 const recording = ref(false)
 const micBusy = ref(false)
 const playingIndex = ref(-1)
+
+// 正在播放的后端音频实例（用于随时 stop / 打断）
+let currentAudio = null
+
+// 停止当前朗读（后端音频 + 浏览器兜底朗读都会被中止）
+const stopVoice = () => {
+  if (currentAudio) {
+    currentAudio.pause()
+    currentAudio.src = ''
+    currentAudio = null
+  }
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel()
+  }
+  playingIndex.value = -1
+}
 
 // 按住说话：开始录音（请求麦克风权限）
 const startRecord = async () => {
@@ -209,9 +225,11 @@ const stopRecord = async () => {
   }
 }
 
-// 朗读 AI 回复（TTS）
+// 朗读 AI 回复（TTS，支持随时打断：重复点击当前项 = 停止，点其它项 = 切换）
 const playVoice = async (text, idx) => {
   if (!text || loading.value) return
+  // 先停掉任何已在播放的声音，实现"随时打断/切换"
+  stopVoice()
   playingIndex.value = idx
   let used = false
   try {
@@ -219,24 +237,29 @@ const playVoice = async (text, idx) => {
     if (res.code === 200 && res.data.url) {
       used = true
       const audio = new Audio(res.data.url)
-      audio.onended = () => { playingIndex.value = -1 }
-      audio.onerror = () => { playingIndex.value = -1; readAloudLocal(text) }
+      currentAudio = audio
+      const finish = () => { if (currentAudio === audio) { currentAudio = null; playingIndex.value = -1 } }
+      audio.onended = finish
+      audio.onerror = () => { finish(); readAloudLocal(text, idx) }
       audio.play()
     }
   } catch (e) {
     // 后端语音暂不可用时，回退用浏览器原生朗读
   }
-  if (!used) readAloudLocal(text)
+  if (!used) readAloudLocal(text, idx)
 }
 
-// 最终兜底：用浏览器原生 speechSynthesis 朗读（任何环境都能出声）
-const readAloudLocal = (text) => {
-  playingIndex.value = -1
+// 最终兜底：用浏览器原生 speechSynthesis 朗读（任何环境都能出声，也支持打断）
+const readAloudLocal = (text, idx) => {
+  playingIndex.value = idx
   if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
     const u = new SpeechSynthesisUtterance(text)
     u.lang = 'zh-CN'
+    u.onend = () => { playingIndex.value = -1 }
+    u.onerror = () => { playingIndex.value = -1 }
     window.speechSynthesis.speak(u)
   } else {
+    playingIndex.value = -1
     ElMessage.warning('语音服务暂不可用，请使用 Chrome / Edge 浏览器')
   }
 }

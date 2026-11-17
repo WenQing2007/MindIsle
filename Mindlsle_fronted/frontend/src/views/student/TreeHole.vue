@@ -120,11 +120,6 @@ const commentText = reactive({})
 const loadingComments = reactive({})
 const submittingComment = reactive({})
 
-// 当前展开评论的树洞id
-const expandCommentId = ref(null)
-// 保存各个树洞对应的评论输入框内容
-const commentInputMap = ref({})
-
 const loadList = async () => {
   try {
     const res = await getTreeHoleList()
@@ -217,43 +212,6 @@ const formatTime = (iso) => {
   } catch {
     return iso
   }
-}
-
-// 切换展开/收起评论
-const toggleComment = (holeId) => {
-  expandCommentId.value = expandCommentId.value === holeId ? null : holeId
-  // 真实项目这里调用接口获取该树洞评论
-  // if(expandCommentId.value){ await fetchCommentList(holeId) }
-}
-
-// 提交评论（模拟）
-const handleSubmitComment = (holeId) => {
-  const text = commentInputMap.value[holeId]?.trim()
-  if (!text) {
-    alert('评论不能为空')
-    return
-  }
-
-  // ==========这里等后端接口写好，替换下面模拟代码==========
-  /*
-  const res = await postTreeHoleComment({ hole_id: holeId, content:text })
-  if(res.code===200){
-      commentInputMap.value[holeId] = ''
-      await loadList()
-  }
-  */
-
-  // 模拟新增一条评论，仅看界面效果
-  const targetPost = holeList.value.find(p => p.id === holeId)
-  if (targetPost) {
-    targetPost.commentList.push({
-      id: Date.now(),
-      content: text,
-      author_name: '匿名用户',
-      created_at: new Date().toLocaleString()
-    })
-  }
-  commentInputMap.value[holeId] = ''
 }
 
 onMounted(() => {
@@ -514,36 +472,5 @@ onMounted(() => {
   background-color: rgba(255, 255, 255, 0.72) !important;
   border: 1px solid rgba(255,255,255,0.8) !important;
   box-shadow: 0 4px 16px rgba(220,180,190,0.12) !important;
-}
-
-.comment-wrap {
-  margin-top:14px;
-  padding-top:12px;
-  border-top:1px dashed #f8ccd4;
-}
-.comment-list {
-  margin-top:12px;
-}
-.comment-item {
-  background:rgba(255,255,255,0.55);
-  border-radius:10px;
-  padding:10px 14px;
-  margin-bottom:8px;
-}
-.c-text {
-  font-size:14px;
-  color:#444;
-  line-height:1.5;
-}
-.c-meta {
-  margin-top:4px;
-  font-size:12px;
-  color:#888;
-  text-align:right;
-}
-.empty-tip {
-  margin-top:12px;
-  font-size:13px;
-  color:#999;
 }
 </style>
