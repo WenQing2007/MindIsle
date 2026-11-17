@@ -98,6 +98,15 @@ def init_db():
             created_at    TEXT    NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS treehole_comment (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            hole_id       INTEGER NOT NULL,
+            content       TEXT    NOT NULL,
+            author_name   TEXT    DEFAULT '匿名树洞友',
+            created_at    TEXT    NOT NULL,
+            FOREIGN KEY (hole_id) REFERENCES treehole(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_message_session ON chat_message(session_id);
         CREATE INDEX IF NOT EXISTS idx_assessment_session ON risk_assessment(session_id);
         CREATE INDEX IF NOT EXISTS idx_report_session    ON report(session_id);
@@ -437,6 +446,33 @@ def get_treehole_list(limit: int = 100):
 def delete_treehole(hole_id: int):
     with get_connection() as conn:
         conn.execute("DELETE FROM treehole WHERE id = ?", (hole_id,))
+
+
+def add_treehole_comment(hole_id: int, content: str, author_name: str = "匿名树洞友"):
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO treehole_comment (hole_id, content, author_name, created_at) VALUES (?, ?, ?, ?)",
+            (hole_id, content, author_name, datetime.now().isoformat(timespec="seconds"))
+        )
+        return cur.lastrowid
+
+
+def get_treehole_comments(hole_id: int):
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, hole_id, content, author_name, created_at FROM treehole_comment WHERE hole_id = ? ORDER BY created_at ASC",
+            (hole_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def count_treehole_comments(hole_id: int) -> int:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS c FROM treehole_comment WHERE hole_id = ?",
+            (hole_id,)
+        ).fetchone()
+        return row["c"] if row else 0
 
 
 if __name__ == "__main__":

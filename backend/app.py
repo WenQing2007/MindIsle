@@ -205,6 +205,25 @@ def treehole_add(post: TreeHolePost):
     return ok({"id": hole_id})
 
 
+class CommentPost(BaseModel):
+    hole_id: int
+    content: str
+
+
+@app.get("/api/treehole/comments")
+def treehole_comments(hole_id: int):
+    comments = db.get_treehole_comments(hole_id)
+    return ok(comments)
+
+
+@app.post("/api/treehole/comment/add")
+def treehole_comment_add(post: CommentPost):
+    if not post.content or not post.content.strip():
+        return fail(400, "评论内容不能为空")
+    cid = db.add_treehole_comment(post.hole_id, post.content.strip())
+    return ok({"id": cid})
+
+
 # ============================================================
 # AI 聊天
 # ============================================================
