@@ -343,7 +343,7 @@ def gen_student_report(student_id: int):
     filepath = report_mod.generate_student_report(student, sessions, messages, risk_history)
     import database
     report_id = database.add_report(
-        session_id=sessions[0]["id"] if sessions else 0,
+        session_id=sessions[0]["id"] if sessions else None,
         report_type="counseling",
         title=os.path.basename(filepath),
         content="学生个体心理成长报告",

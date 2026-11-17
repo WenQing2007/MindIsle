@@ -71,13 +71,13 @@ def init_db():
 
         CREATE TABLE IF NOT EXISTS report (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id    INTEGER NOT NULL,
+            session_id    INTEGER,
             report_type   TEXT    NOT NULL CHECK(report_type IN ('counseling', 'warning', 'weekly')),
             title         TEXT,
             content       TEXT    NOT NULL,
             file_path     TEXT,
             created_at    TEXT    NOT NULL,
-            FOREIGN KEY (session_id) REFERENCES chat_session(id) ON DELETE CASCADE
+            FOREIGN KEY (session_id) REFERENCES chat_session(id) ON DELETE SET NULL
         );
 
         CREATE TABLE IF NOT EXISTS user_account (
@@ -102,6 +102,31 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_assessment_session ON risk_assessment(session_id);
         CREATE INDEX IF NOT EXISTS idx_report_session    ON report(session_id);
         CREATE INDEX IF NOT EXISTS idx_session_student   ON chat_session(student_id);
+        """)
+
+        _migrate_report_session_nullable(conn)
+
+
+def _migrate_report_session_nullable(conn):
+    """旧版 report 表 session_id 是 NOT NULL + CASCADE，导致无会话的学生无法生成报告。
+    SQLite 不支持 ALTER COLUMN，这里通过重建表做一次幂等迁移。"""
+    cols = conn.execute("PRAGMA table_info(report)").fetchall()
+    session_col = next((c for c in cols if c[1] == "session_id"), None)
+    if session_col and session_col[3] == 1:
+        conn.executescript("""
+            CREATE TABLE report_new (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id    INTEGER,
+                report_type   TEXT    NOT NULL CHECK(report_type IN ('counseling', 'warning', 'weekly')),
+                title         TEXT,
+                content       TEXT    NOT NULL,
+                file_path     TEXT,
+                created_at    TEXT    NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES chat_session(id) ON DELETE SET NULL
+            );
+            INSERT OR IGNORE INTO report_new SELECT * FROM report;
+            DROP TABLE IF EXISTS report;
+            ALTER TABLE report_new RENAME TO report;
         """)
 
 
