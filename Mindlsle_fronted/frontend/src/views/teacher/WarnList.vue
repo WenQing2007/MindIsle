@@ -55,9 +55,18 @@
         </el-table-column>
         <el-table-column prop="indicators" label="关键指标" show-overflow-tooltip />
         <el-table-column prop="assessed_at" label="评估时间" width="170" />
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="scope">
-            <el-button size="small" @click="generateReport(scope.row.student_id)">生成报告</el-button>
+            <el-button size="small" @click="generateReport(scope.row.student_id)">成长报告</el-button>
+            <el-button
+              v-if="['critical', 'high'].includes(scope.row.risk_level)"
+              size="small"
+              type="danger"
+              plain
+              @click="generateCrisisReport(scope.row.student_id, scope.row.name)"
+            >
+              危机处置
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -116,6 +125,21 @@ const generateReport = async (sid) => {
     }
   } catch (err) {
     alert("生成报告失败")
+  }
+}
+
+const generateCrisisReport = async (sid, name) => {
+  try {
+    const res = await axios.post('/api/report/crisis', { student_id: sid })
+    const data = res.data
+    if (data.code === 200) {
+      alert(`${name || ''} 的危机事件处置报告已生成！\n文件路径：${data.data.filepath}`)
+      window.open(`/api/report/download?filepath=${encodeURIComponent(data.data.filepath)}`, '_blank')
+    } else {
+      alert(data.msg || "生成危机处置报告失败")
+    }
+  } catch (err) {
+    alert("生成危机处置报告失败")
   }
 }
 

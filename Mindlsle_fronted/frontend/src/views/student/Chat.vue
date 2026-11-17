@@ -46,6 +46,13 @@
                 <div v-if="m.is_vetoed" class="veto-alert">
                   ⚠️ AI 已触发安全保护，请立即拨打全国24小时心理援助热线：<b>{{ m.crisis_hotline }}</b>
                 </div>
+                <button
+                  v-if="m.role === 'assistant' && !loading"
+                  class="voice-btn"
+                  @click="playVoice(m.content, idx)"
+                >
+                  {{ playingIndex === idx ? '🔊 播放中…' : '🔊 朗读' }}
+                </button>
               </div>
             </div>
             <div v-if="loading" class="msg-item msg-left">
@@ -85,6 +92,22 @@
               </el-popover>
               <span class="toolbar-hint">选个表情，表达你的心情</span>
             </div>
+            <div class="mic-row">
+              <el-button
+                circular
+                size="small"
+                :type="recording ? 'danger' : 'primary'"
+                :disabled="loading"
+                @mousedown.prevent="startRecord()"
+                @mouseup.prevent="stopRecord()"
+                @mouseleave="stopRecord()"
+                class="mic-btn"
+              >
+                {{ recording ? '🔴 正在录音，松开结束' : '🎤 按住说话' }}
+              </el-button>
+              <span class="mic-tip">按住说话，松开即可把语音识别成文字</span>
+            </div>
+            </div>
             <el-input
               ref="inputRef"
               v-model="inputText"
@@ -110,7 +133,10 @@
 <script setup>
 import { ref, onMounted, nextTick, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { sendChatMessage, getChatSessions, getChatHistory } from '@/api/student'
+import { stt, tts } from '@/api/voice'
+import VoiceRecorder from '@/components/VoiceRecorder'
 
 const router = useRouter()
 const inputText = ref('')
@@ -143,6 +169,78 @@ const emojiList = [
   '🧘', '🏃', '🚶', '💃', '🕺', '👯', '🤝', '🙏',
   '💪', '🫶', '🤲', '👐', '🙌', '🤙', '👋', '✌️',
 ]
+
+// ---- 语音对话：录音(STT 输入) + 朗读(TTS 输出) ----
+const recorder = new VoiceRecorder()
+const recording = ref(false)
+const micBusy = ref(false)
+const playingIndex = ref(-1)
+
+// 按住说话：开始录音（请求麦克风权限）
+const startRecord = async () => {
+  if (recording.value || micBusy.value || loading.value) return
+  micBusy.value = true
+  try {
+    await recorder.start()
+    recording.value = true
+  } catch (e) {
+    ElMessage.warning('无法录音：' + (e || '请授予麦克风权限'))
+  } finally {
+    micBusy.value = false
+  }
+}
+
+// 松开：停止录音并上传识别文字
+const stopRecord = async () => {
+  if (!recording.value) return
+  const blob = await recorder.stop()
+  recording.value = false
+  if (!blob) return
+  ElMessage.info('正在识别语音…')
+  try {
+    const res = await stt(blob, 'record.wav')
+    if (res.code === 200 && res.data.text) {
+      inputText.value = res.data.text
+      ElMessage.success('已识别，可修改后点击「发送」')
+    } else {
+      ElMessage.warning(res.msg || '未识别到内容，请再试一次')
+    }
+  } catch (e) {
+    ElMessage.error('语音识别失败：' + (e.message || e))
+  }
+}
+
+// 朗读 AI 回复（TTS）
+const playVoice = async (text, idx) => {
+  if (!text || loading.value) return
+  playingIndex.value = idx
+  let used = false
+  try {
+    const res = await tts(text)
+    if (res.code === 200 && res.data.url) {
+      used = true
+      const audio = new Audio(res.data.url)
+      audio.onended = () => { playingIndex.value = -1 }
+      audio.onerror = () => { playingIndex.value = -1; readAloudLocal(text) }
+      audio.play()
+    }
+  } catch (e) {
+    // 后端语音暂不可用时，回退用浏览器原生朗读
+  }
+  if (!used) readAloudLocal(text)
+}
+
+// 最终兜底：用浏览器原生 speechSynthesis 朗读（任何环境都能出声）
+const readAloudLocal = (text) => {
+  playingIndex.value = -1
+  if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
+    const u = new SpeechSynthesisUtterance(text)
+    u.lang = 'zh-CN'
+    window.speechSynthesis.speak(u)
+  } else {
+    ElMessage.warning('语音服务暂不可用，请使用 Chrome / Edge 浏览器')
+  }
+}
 
 const studentId = computed(() => {
   return parseInt(localStorage.getItem('student_id') || '1')
@@ -317,6 +415,24 @@ onMounted(async () => {
   border-top: 1px solid #ebeef5;
   padding-top: 12px;
 }
+.mic-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.mic-btn { flex-shrink: 0; }
+.mic-tip { font-size: 12px; color: #909399; }
+.voice-btn {
+  margin-top: 8px;
+  background: transparent;
+  border: none;
+  color: #409eff;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+.voice-btn:hover { text-decoration: underline; }
 .loading-dots {
   display: inline-flex;
   gap: 4px;

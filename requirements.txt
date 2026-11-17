@@ -6,3 +6,12 @@ fpdf2==2.8.9
 SpeechRecognition
 pyttsx3
 playsound==1.2.2
+
+# 方案 B 语音：
+#   TTS：edge-tts（微软云端中文，网络可达时音质最佳）+ piper-tts（本地神经网络，通用兜底、离线可用、后台服务稳定）
+#   STT：faster-whisper（本地识别）
+# 注意：必须锁定 av==17.0.0；Python 3.12+ 若装最新 av(19) 会让 faster-whisper 解码报错。
+edge-tts==7.3.1
+faster-whisper==1.2.1
+av==17.0.0
+piper-tts==1.8.0
