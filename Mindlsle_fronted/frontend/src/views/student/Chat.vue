@@ -59,7 +59,34 @@
           </div>
 
           <div class="input-area">
+            <div class="input-toolbar">
+              <el-popover
+                placement="top-start"
+                :width="340"
+                trigger="click"
+                v-model:visible="showEmoji"
+                popper-class="emoji-popover"
+              >
+                <div class="emoji-panel">
+                  <div class="emoji-grid">
+                    <span
+                      v-for="(e, i) in emojiList"
+                      :key="i"
+                      class="emoji-item"
+                      @click="insertEmoji(e)"
+                    >{{ e }}</span>
+                  </div>
+                </div>
+                <template #reference>
+                  <el-button size="small" circle class="emoji-btn">
+                    😊
+                  </el-button>
+                </template>
+              </el-popover>
+              <span class="toolbar-hint">选个表情，表达你的心情</span>
+            </div>
             <el-input
+              ref="inputRef"
               v-model="inputText"
               type="textarea"
               :rows="3"
@@ -93,6 +120,29 @@ const currentSessionId = ref(null)
 const showHistory = ref(false)
 const loading = ref(false)
 const msgBox = ref(null)
+const inputRef = ref(null)
+const showEmoji = ref(false)
+
+const emojiList = [
+  '😀', '😁', '😂', '🤣', '😊', '😇', '🙂', '😉',
+  '😍', '🥰', '😘', '😗', '😚', '😋', '😛', '😜',
+  '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🤐',
+  '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧',
+  '😮', '😲', '🥱', '😴', '🤤', '😪', '😫', '😌',
+  '😔', '😕', '🙃', '🫠', '🫡', '🤐', '🫥', '🥲',
+  '😏', '😒', '🙄', '😬', '🤥', '😌', '😔', '😪',
+  '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍',
+  '🌱', '🌿', '🍀', '🌸', '🌺', '🌻', '🌼', '🌷',
+  '☘️', '🍃', '🪴', '🌵', '🌳', '🌴', '🌲', '🌰',
+  '☀️', '🌤️', '⛅', '☁️', '🌧️', '🌦️', '⛈️', '🌈',
+  '⭐', '🌟', '✨', '💫', '🪐', '🌙', '🌛', '🌜',
+  '🎵', '🎶', '🎼', '🎹', '🎷', '🎺', '🎸', '🪕',
+  '📚', '📖', '📝', '✏️', '🖊️', '🖋️', '📓', '📔',
+  '🏠', '🏡', '🏖️', '🏔️', '🏕️', '⛺', '🌋', '🏜️',
+  '🍀', '🎯', '🎨', '🎭', '🎪', '🎢', '🎡', '🎠',
+  '🧘', '🏃', '🚶', '💃', '🕺', '👯', '🤝', '🙏',
+  '💪', '🫶', '🤲', '👐', '🙌', '🤙', '👋', '✌️',
+]
 
 const studentId = computed(() => {
   return parseInt(localStorage.getItem('student_id') || '1')
@@ -177,6 +227,19 @@ const send = async () => {
     loading.value = false
     scrollBottom()
   }
+}
+
+const insertEmoji = (emoji) => {
+  inputText.value += emoji
+  showEmoji.value = false
+  nextTick(() => {
+    const ta = inputRef.value?.textarea
+    if (ta) {
+      ta.focus()
+      const pos = ta.value.length
+      ta.setSelectionRange(pos, pos)
+    }
+  })
 }
 
 const clearAll = () => {
@@ -279,4 +342,68 @@ onMounted(async () => {
 }
 .session-item:hover { background: #ecf5ff; }
 .session-item.active { background: #d9ecff; border: 1px solid #409eff; }
+
+.input-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.emoji-btn {
+  background: var(--brand-bg-soft) !important;
+  border: 1px solid var(--brand-border) !important;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.emoji-btn:hover {
+  background: var(--brand-primary-light) !important;
+  transform: scale(1.1);
+}
+
+.toolbar-hint {
+  font-size: 12px;
+  color: var(--brand-text-muted);
+}
+
+.emoji-panel {
+  padding: 6px;
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.emoji-item {
+  font-size: 18px;
+  text-align: center;
+  padding: 4px 2px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.15s;
+  user-select: none;
+  line-height: 1;
+}
+
+.emoji-item:hover {
+  background: var(--brand-bg-soft);
+  transform: scale(1.25);
+}
+</style>
+
+<style>
+.emoji-popover {
+  padding: 4px !important;
+  border-radius: var(--brand-radius-md) !important;
+  border: 1px solid var(--brand-border) !important;
+}
+
+.emoji-popover .el-popover__content {
+  padding: 0 !important;
+}
 </style>
