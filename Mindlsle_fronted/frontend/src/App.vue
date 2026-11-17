@@ -7,7 +7,7 @@
     </router-view>
 
     <div class="global-watermark">
-      <span>🌿 AI 生成内容仅供参考，不构成医疗诊断。如遇紧急情况请拨打 <b>400-161-9995</b></span>
+      <span>🌿 AI 生成内容仅供参考，不构成医疗诊断。如遇紧急情况请拨打 <b>400‑161‑9995</b></span>
     </div>
   </div>
 </template>
@@ -16,7 +16,6 @@
 </script>
 
 <style>
-<<<<<<< HEAD
 /* 覆盖Element Plus全局背景变量，所有页面生效 */
 :root {
   --el-bg-color: transparent !important;
@@ -40,8 +39,7 @@ body {
 .el-main {
   background-color: transparent !important;
 }
-</style>
-=======
+
 .app-root {
   min-height: 100vh;
   padding-bottom: 28px;
@@ -82,4 +80,3 @@ body {
   transform: translateY(-8px);
 }
 </style>
->>>>>>> 44f6bc14f510b6b23fd742afaf4d28e4d23eeffe

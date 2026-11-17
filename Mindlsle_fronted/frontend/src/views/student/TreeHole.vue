@@ -26,37 +26,6 @@
       </div>
     </el-card>
 
-<<<<<<< HEAD
-    <div style="margin-top:20px">
-      <el-card v-for="item in holeList" :key="item.id" style="margin-bottom:15px">
-        <p>{{ item.content }}</p>
-        <div style="text-align:right;color:#888;margin-bottom:10px">
-          {{ item.author_name }} · {{ item.created_at }}
-        </div>
-
-        <!-- 展开收起评论按钮 -->
-        <el-button size="small" text @click="toggleComment(item.id)">
-          {{ expandCommentId === item.id ? '收起评论' : `💬查看评论(${item.commentList?.length || 0})` }}
-        </el-button>
-
-        <!-- 评论区域 -->
-        <div v-if="expandCommentId === item.id" class="comment-wrap">
-          <el-input
-            v-model="commentInputMap[item.id]"
-            type="textarea"
-            :rows="2"
-            placeholder="写下你的评论，匿名发送"
-          ></el-input>
-          <el-button size="small" type="primary" style="margin-top:8px" @click="handleSubmitComment(item.id)">提交评论</el-button>
-
-          <div class="comment-list" v-if="item.commentList && item.commentList.length">
-            <div class="comment-item" v-for="c in item.commentList" :key="c.id">
-              <div class="c-text">{{ c.content }}</div>
-              <div class="c-meta">{{ c.author_name }} · {{ c.created_at }}</div>
-            </div>
-          </div>
-          <div v-else class="empty-tip">暂无评论，快来抢沙发</div>
-=======
     <div class="hole-list" v-if="holeList.length > 0">
       <el-card
         v-for="item in holeList"
@@ -129,7 +98,6 @@
               发送
             </el-button>
           </div>
->>>>>>> 44f6bc14f510b6b23fd742afaf4d28e4d23eeffe
         </div>
       </el-card>
     </div>
@@ -294,15 +262,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-<<<<<<< HEAD
-.treehole {
-  width: 100vw;
-  min-height: 100vh;
-  padding: 30px;
-  box-sizing: border-box;
-  margin: -30px calc(-50vw + 50%);
-  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
-=======
 .treehole-page {
   padding: 30px;
   max-width: 780px;
@@ -548,7 +507,6 @@ onMounted(() => {
 
 .comment-input-row .el-input {
   flex: 1;
->>>>>>> 44f6bc14f510b6b23fd742afaf4d28e4d23eeffe
 }
 
 :deep(.el-card) {
