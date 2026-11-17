@@ -162,6 +162,21 @@ def teacher_login(req: LoginRequest):
         "name": req.username,
     })
 
+class TeacherRegisterRequest(BaseModel):
+    username: str
+    password: str
+    name: str
+    school: str
+    department: Optional[str] = None
+    phone: Optional[str] = None
+
+
+@app.post("/api/teacher/register")
+def teacher_register(req: TeacherRegisterRequest):
+    print("✅ 收到教师注册：", req.model_dump())
+    return ok(msg="教师注册成功（临时测试，不存入数据库）")
+
+
 
 @app.post("/api/admin/login")
 def admin_login(req: LoginRequest):

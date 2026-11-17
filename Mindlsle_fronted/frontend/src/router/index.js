@@ -45,6 +45,12 @@ const routes = [
     name: 'TeacherLogin',
     component: () => import('../views/teacher/Login.vue')
   },
+  // ========== 新增这一条 教师注册路由 ==========
+  {
+    path: '/teacher/register',
+    name: 'TeacherRegister',
+    component: () => import('../views/teacher/Register.vue')
+  },
   {
     path: '/teacher/warnlist',
     name: 'WarnList',
@@ -73,8 +79,10 @@ const router = createRouter({
 })
 
 export default router
+
 router.beforeEach((to, from, next) => {
-  const whiteList = ['/student/login', '/student/register', '/teacher/login', '/admin/login']
+  // ========== 白名单加上 '/teacher/register' ==========
+  const whiteList = ['/student/login', '/student/register', '/teacher/login', '/teacher/register', '/admin/login']
   const token = localStorage.getItem('token')
 
   if (token) {

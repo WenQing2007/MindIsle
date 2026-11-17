@@ -14,3 +14,12 @@ export function getWarnings() {
     method: 'get'
   })
 }
+
+// ===== 追加这一段 =====
+export function teacherRegister(data) {
+  return request({
+    url: '/api/teacher/register',
+    method: 'post',
+    data
+  })
+}
