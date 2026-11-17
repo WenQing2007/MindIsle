@@ -22,6 +22,7 @@ KEYWORD_MAP: Dict[str, List[str]] = {
         "压力", "难过", "焦虑", "烦恼", "担心", "害怕考试",
         "累", "心累", "郁闷", "烦躁", "不开心", "不太好",
         "紧张", "迷茫", "孤独", "失落", "沮丧", "忧愁",
+        "撑不下去", "撑不住", "扛不住", "坚持不下去", "熬不住", "挺不住",
     ],
     "orange": [
         "欺凌", "欺负", "被欺负", "被打", "挨打", "讨厌", "恨",
@@ -31,6 +32,8 @@ KEYWORD_MAP: Dict[str, List[str]] = {
     "red": [
         "自杀", "不想活", "想死", "跳楼", "割腕", "结束生命",
         "活不下去", "了断", "去死", "自伤", "自残",
+        "上吊", "跳江", "吞药", "安眠药",
+        "轻生", "寻短见", "坠楼", "结束自己", "跳河",
     ],
 }
 
@@ -60,19 +63,29 @@ def assess(text: str) -> Dict[str, Any]:
     """
     text = text or ""
 
-    best_level = "green"
-    best_index = 0
-    all_matched: List[str] = []
-
+    # 收集全部命中（含位置），用于“最长匹配优先 + 区间重叠去重”。
+    # 修复：'害怕考试'（黄）中同时含 '害怕'/'怕'（橙）子串，若简单叠加会
+    # 把考试焦虑误拆成橙色“害怕”；按“最长匹配优先”后短字串被长词区间覆盖，
+    # 从而正确命中更贴切的 yellow。
+    hits: List[Any] = []
     for level in LEVEL_ORDER:
-        keywords = KEYWORD_MAP[level]
-        hits = [kw for kw in keywords if kw in text]
-        if hits:
-            all_matched.extend(hits)
-            idx = LEVEL_ORDER.index(level)
-            if idx > best_index:
-                best_index = idx
-                best_level = level
+        li = LEVEL_ORDER.index(level)
+        for kw in KEYWORD_MAP[level]:
+            pos = text.find(kw)
+            if pos != -1:
+                hits.append((li, kw, pos, pos + len(kw)))
+
+    # 关键字长度降序：越长的越优先，落在已采纳长区间内的短字串则被覆盖丢弃。
+    hits.sort(key=lambda h: (-len(h[1]), h[0]))
+    adopted: List[Any] = []
+    for li, kw, s, e in hits:
+        overlapped = any(s < e2 and s2 < e for (_, _, s2, e2) in adopted)
+        if not overlapped:
+            adopted.append((li, kw, s, e))
+
+    adopted.sort(key=lambda h: (h[0], h[1]))  # 按风险等级有序呈现
+    all_matched: List[str] = [kw for (_, kw, _, _) in adopted]
+    best_level: str = LEVEL_ORDER[max(h[0] for h in adopted)] if adopted else "green"
 
     score_map = {"green": 0.1, "yellow": 0.35, "orange": 0.7, "red": 1.0}
 

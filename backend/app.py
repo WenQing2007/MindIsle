@@ -2,6 +2,8 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel
 from typing import Optional
 import sys
@@ -72,11 +74,6 @@ def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depen
 # ============================================================
 # 根 & 健康检查
 # ============================================================
-
-@app.get("/")
-def root():
-    return {"message": "心屿后端运行成功"}
-
 
 @app.get("/health")
 def health():
@@ -206,6 +203,25 @@ def treehole_add(post: TreeHolePost):
         return fail(400, "内容不能为空")
     hole_id = db.add_treehole(post.content.strip())
     return ok({"id": hole_id})
+
+
+class CommentPost(BaseModel):
+    hole_id: int
+    content: str
+
+
+@app.get("/api/treehole/comments")
+def treehole_comments(hole_id: int):
+    comments = db.get_treehole_comments(hole_id)
+    return ok(comments)
+
+
+@app.post("/api/treehole/comment/add")
+def treehole_comment_add(post: CommentPost):
+    if not post.content or not post.content.strip():
+        return fail(400, "评论内容不能为空")
+    cid = db.add_treehole_comment(post.hole_id, post.content.strip())
+    return ok({"id": cid})
 
 
 # ============================================================
@@ -343,7 +359,7 @@ def gen_student_report(student_id: int):
     filepath = report_mod.generate_student_report(student, sessions, messages, risk_history)
     import database
     report_id = database.add_report(
-        session_id=sessions[0]["id"] if sessions else 0,
+        session_id=sessions[0]["id"] if sessions else None,
         report_type="counseling",
         title=os.path.basename(filepath),
         content="学生个体心理成长报告",
@@ -394,3 +410,27 @@ def download_report(filepath: str):
 def list_students():
     students = db.get_all_students()
     return ok(students)
+
+
+# ============================================================
+# 前端 SPA 托管（dist/ 目录）
+# ============================================================
+
+FRONTEND_DIST = os.path.join(PROJECT_ROOT, "Mindlsle_fronted", "frontend", "dist")
+
+if os.path.isdir(FRONTEND_DIST):
+    @app.exception_handler(StarletteHTTPException)
+    async def spa_fallback(request, exc):
+        if exc.status_code == 404 and request.headers.get("accept", "").startswith("text/html"):
+            return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+        raise exc
+
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
+
+    @app.get("/")
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str = ""):
+        target = os.path.join(FRONTEND_DIST, full_path) if full_path else os.path.join(FRONTEND_DIST, "index.html")
+        if os.path.isfile(target):
+            return FileResponse(target)
+        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))

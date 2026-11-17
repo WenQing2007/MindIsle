@@ -21,7 +21,7 @@
             :class="{ active: s.id === currentSessionId }"
             @click="switchSession(s.id)"
           >
-            <div style="font-size:13px">{{ s.started_at }}</div>
+            <div style="font-size:13px"><b>会话 #{{ s.id }}</b> · {{ s.started_at }}</div>
             <div style="font-size:12px; color:#999">
               {{ s.ended_at ? '已结束' : '进行中' }}
             </div>
@@ -41,9 +41,8 @@
               <div class="avatar">{{ m.role === 'user' ? '我' : 'AI' }}</div>
               <div class="bubble" :class="m.role === 'user' ? 'bubble-user' : 'bubble-ai'">
                 <div style="white-space:pre-wrap">{{ m.content }}</div>
-                <div v-if="m.risk_level_cn" class="risk-tag" :class="'risk-' + m.risk_level">
-                  风险评估：{{ m.risk_level_cn }} {{ m.risk_matched ? '· ' + m.risk_matched.join('、') : '' }}
-                </div>
+                <!-- 风险评估对低等级（绿/黄/橙）不向学生展示标签或命中词，避免标签感；
+                     仅红色高危时展示热线横幅（一票否决，伦理要求不可隐藏危机信号）。 -->
                 <div v-if="m.is_vetoed" class="veto-alert">
                   ⚠️ AI 已触发安全保护，请立即拨打全国24小时心理援助热线：<b>{{ m.crisis_hotline }}</b>
                 </div>
@@ -60,7 +59,34 @@
           </div>
 
           <div class="input-area">
+            <div class="input-toolbar">
+              <el-popover
+                placement="top-start"
+                :width="340"
+                trigger="click"
+                v-model:visible="showEmoji"
+                popper-class="emoji-popover"
+              >
+                <div class="emoji-panel">
+                  <div class="emoji-grid">
+                    <span
+                      v-for="(e, i) in emojiList"
+                      :key="i"
+                      class="emoji-item"
+                      @click="insertEmoji(e)"
+                    >{{ e }}</span>
+                  </div>
+                </div>
+                <template #reference>
+                  <el-button size="small" circle class="emoji-btn">
+                    😊
+                  </el-button>
+                </template>
+              </el-popover>
+              <span class="toolbar-hint">选个表情，表达你的心情</span>
+            </div>
             <el-input
+              ref="inputRef"
               v-model="inputText"
               type="textarea"
               :rows="3"
@@ -94,6 +120,29 @@ const currentSessionId = ref(null)
 const showHistory = ref(false)
 const loading = ref(false)
 const msgBox = ref(null)
+const inputRef = ref(null)
+const showEmoji = ref(false)
+
+const emojiList = [
+  '😀', '😁', '😂', '🤣', '😊', '😇', '🙂', '😉',
+  '😍', '🥰', '😘', '😗', '😚', '😋', '😛', '😜',
+  '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🤐',
+  '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧',
+  '😮', '😲', '🥱', '😴', '🤤', '😪', '😫', '😌',
+  '😔', '😕', '🙃', '🫠', '🫡', '🤐', '🫥', '🥲',
+  '😏', '😒', '🙄', '😬', '🤥', '😌', '😔', '😪',
+  '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍',
+  '🌱', '🌿', '🍀', '🌸', '🌺', '🌻', '🌼', '🌷',
+  '☘️', '🍃', '🪴', '🌵', '🌳', '🌴', '🌲', '🌰',
+  '☀️', '🌤️', '⛅', '☁️', '🌧️', '🌦️', '⛈️', '🌈',
+  '⭐', '🌟', '✨', '💫', '🪐', '🌙', '🌛', '🌜',
+  '🎵', '🎶', '🎼', '🎹', '🎷', '🎺', '🎸', '🪕',
+  '📚', '📖', '📝', '✏️', '🖊️', '🖋️', '📓', '📔',
+  '🏠', '🏡', '🏖️', '🏔️', '🏕️', '⛺', '🌋', '🏜️',
+  '🍀', '🎯', '🎨', '🎭', '🎪', '🎢', '🎡', '🎠',
+  '🧘', '🏃', '🚶', '💃', '🕺', '👯', '🤝', '🙏',
+  '💪', '🫶', '🤲', '👐', '🙌', '🤙', '👋', '✌️',
+]
 
 const studentId = computed(() => {
   return parseInt(localStorage.getItem('student_id') || '1')
@@ -180,13 +229,31 @@ const send = async () => {
   }
 }
 
+const insertEmoji = (emoji) => {
+  inputText.value += emoji
+  showEmoji.value = false
+  nextTick(() => {
+    const ta = inputRef.value?.textarea
+    if (ta) {
+      ta.focus()
+      const pos = ta.value.length
+      ta.setSelectionRange(pos, pos)
+    }
+  })
+}
+
 const clearAll = () => {
   messages.value = []
   currentSessionId.value = null
 }
 
-onMounted(() => {
-  loadSessions()
+onMounted(async () => {
+  // 先刷新会话列表
+  await loadSessions()
+  // 仅当尚未开始新对话时，一次性自动恢复最近会话（避免与用户操作并发竞态覆盖）
+  if (!currentSessionId.value && sessionList.value.length) {
+    await switchSession(sessionList.value[0].id)
+  }
 })
 </script>
 
@@ -275,4 +342,68 @@ onMounted(() => {
 }
 .session-item:hover { background: #ecf5ff; }
 .session-item.active { background: #d9ecff; border: 1px solid #409eff; }
+
+.input-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.emoji-btn {
+  background: var(--brand-bg-soft) !important;
+  border: 1px solid var(--brand-border) !important;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.emoji-btn:hover {
+  background: var(--brand-primary-light) !important;
+  transform: scale(1.1);
+}
+
+.toolbar-hint {
+  font-size: 12px;
+  color: var(--brand-text-muted);
+}
+
+.emoji-panel {
+  padding: 6px;
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.emoji-item {
+  font-size: 18px;
+  text-align: center;
+  padding: 4px 2px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.15s;
+  user-select: none;
+  line-height: 1;
+}
+
+.emoji-item:hover {
+  background: var(--brand-bg-soft);
+  transform: scale(1.25);
+}
+</style>
+
+<style>
+.emoji-popover {
+  padding: 4px !important;
+  border-radius: var(--brand-radius-md) !important;
+  border: 1px solid var(--brand-border) !important;
+}
+
+.emoji-popover .el-popover__content {
+  padding: 0 !important;
+}
 </style>

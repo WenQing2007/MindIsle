@@ -34,6 +34,22 @@ export function postTreeHole(data) {
     data
   })
 }
+// 获取树洞评论列表
+export function getTreeHoleComments(hole_id) {
+  return request({
+    url: '/api/treehole/comments',
+    method: 'get',
+    params: { hole_id }
+  })
+}
+// 发布树洞评论
+export function postTreeHoleComment(data) {
+  return request({
+    url: '/api/treehole/comment/add',
+    method: 'post',
+    data
+  })
+}
 
 // 发送聊天消息
 export function sendChatMessage(data) {
