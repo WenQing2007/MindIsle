@@ -4,7 +4,6 @@
       <el-page-header :content="'你好，' + userName + ' 👋'"></el-page-header>
       <el-button size="small" @click="logout">退出登录</el-button>
     </div>
-
     <el-row :gutter="20" style="margin-top:20px">
       <el-col :span="8">
         <el-card shadow="hover" class="feature-card" @click="$router.push('/student/chat')">
@@ -28,7 +27,6 @@
         </el-card>
       </el-col>
     </el-row>
-
     <el-alert
       style="margin-top:30px"
       type="info"
@@ -42,13 +40,10 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
-
 const router = useRouter()
-
 const userName = computed(() => {
   return localStorage.getItem('name') || '同学'
 })
-
 const logout = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('userType')
@@ -56,7 +51,6 @@ const logout = () => {
   localStorage.removeItem('name')
   router.push('/student/login')
 }
-
 const genReport = async () => {
   const sid = localStorage.getItem('student_id')
   if (!sid) {
@@ -82,35 +76,68 @@ const genReport = async () => {
 <style scoped>
 .student-home {
   padding: 30px;
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: linear-gradient(135deg, #fdfbf7 0%, #f0f7ff 100%);
 }
+
 .top-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 12px;
 }
+
+:deep(.el-card) {
+  border-radius: 22px !important;
+  border: 1px solid rgba(255, 255, 255, 0.75) !important;
+  box-shadow: 0 4px 18px rgba(170, 200, 230, 0.12) !important;
+}
+
+:deep(.el-row .el-col:nth-child(1) .el-card__body) {
+  background-color: #eaf4ff;
+}
+:deep(.el-row .el-col:nth-child(2) .el-card__body) {
+  background-color: #e8f8f0;
+}
+:deep(.el-row .el-col:nth-child(3) .el-card__body) {
+  background-color: #fff4e4;
+}
+
 .feature-card {
   text-align: center;
   cursor: pointer;
-  transition: transform .2s;
+  transition: all 0.3s ease;
 }
 .feature-card:hover {
-  transform: translateY(-4px);
+  transform: translateY(-6px);
 }
+.feature-card:hover :deep(.el-card) {
+  box-shadow: 0 10px 28px rgba(170, 200, 230, 0.20) !important;
+}
+
 .feature-icon {
   font-size: 48px;
   margin-bottom: 12px;
 }
 .feature-title {
   font-size: 18px;
-  font-weight: bold;
+  font-weight: 500;
   margin-bottom: 6px;
-  color: #303133;
+  color: #44546a;
 }
 .feature-desc {
-  font-size: 13px;
-  color: #909399;
+  font-size: 14px;
+  color: #718096;
 }
-.chat-icon   { color: #409eff; }
-.hole-icon   { color: #67c23a; }
-.report-icon { color: #e6a23c; }
+
+.chat-icon   { color: #5b9bd5; }
+.hole-icon   { color: #63b980; }
+.report-icon { color: #e2a86e; }
+
+:deep(.el-alert--info) {
+  border-radius:14px;
+  background-color: rgba(255,255,255,0.65) !important;
+  border-color:#dbeafe !important;
+}
 </style>
