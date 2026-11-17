@@ -199,6 +199,9 @@ python -m unittest discover -s tests -v
 | GET | `/api/treehole/list` / POST `/api/treehole/add` | 树洞匿名内容 |
 | GET | `/api/teacher/warnings` | 教师四色预警名单 |
 | POST | `/api/report/student/{id}` / `download` | 生成 / 下载 PDF 报告 |
+| POST | `/api/voice/stt` | 上传语音（wav/mp3/ogg，≤60s），返回识别文字 |
+| POST | `/api/voice/tts` | 文本转中文语音，返回可播放的音频 URL |
+| GET | `/api/voice/audio/{file}` | 获取 / 播放已合成的语音音频 |
 | GET | `/health` | 健康检查（含 LLM 接入状态） |
 
 ---

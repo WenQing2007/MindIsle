@@ -221,3 +221,7 @@ __marimo__/
 *.db-journal
 data/
 output/
+
+# Voice TTS cache (runtime generated, not committed)
+audio/tts_cache/*
+!audio/tts_cache/.gitkeep

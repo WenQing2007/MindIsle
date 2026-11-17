@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
@@ -38,6 +38,7 @@ import risk
 import report as report_mod
 from ai_agents.coordinator import MultiAgentCoordinator
 from ai_agents import llm as llm_client
+import voice
 
 db.init_db()
 db.seed_default_users()
@@ -378,6 +379,64 @@ def gen_class_report(class_name: str):
     return ok({"filepath": filepath})
 
 
+class CrisisReportRequest(BaseModel):
+    student_id: int
+    session_id: Optional[int] = None  # 不传时自动定位该学生最近一次橙/红危机事件
+
+
+@app.post("/api/report/crisis")
+def gen_crisis_report(req: CrisisReportRequest):
+    """危机事件处置报告：定位学生的危机（橙/红）事件并生成处置报告 PDF。"""
+    student = db.get_student(req.student_id)
+    if not student:
+        return fail(404, f"学生 {req.student_id} 不存在")
+
+    # 1) 定位目标会话：优先指定 session_id，否则取该学生最近一次橙/红风险所在的会话
+    if req.session_id is not None:
+        session_risks = db.get_risk_by_session(req.session_id)
+    else:
+        history = db.get_student_risk_history(req.student_id)
+        crisis = next(
+            (h for h in history if h["risk_level"] in ("critical", "high")), None
+        )
+        if not crisis:
+            return fail(400, "该学生暂无危机（橙/红）事件记录，无法生成处置报告")
+        req.session_id = crisis["session_id"]
+        session_risks = db.get_risk_by_session(req.session_id)
+
+    # 2) 取该会话中最近一次橙/红评估记录作为触发风险
+    risk_record = next(
+        (r for r in session_risks if r["risk_level"] in ("critical", "high")),
+        None,
+    )
+    if not risk_record:
+        return fail(400, "该会话无危机（橙/红）评估记录")
+
+    # 3) 取完整对话，触发消息取该会话最后一条学生输入
+    msgs = db.get_messages(req.session_id)
+    user_msgs = [m for m in msgs if m["role"] == "user"]
+    if not user_msgs:
+        return fail(400, "该会话无对话内容")
+    triggering = user_msgs[-1]
+
+    # 4) 生成 PDF 并落库
+    filepath = report_mod.generate_crisis_report(
+        student, triggering, risk_record, msgs
+    )
+    report_id = db.add_report(
+        session_id=req.session_id,
+        report_type="warning",
+        title=f"危机事件处置报告 — {student['name']}",
+        content=(
+            f"学生 {student['name']} 危机事件处置记录上报（风险等级="
+            f"{risk_record.get('risk_level', '-')}，命中指标="
+            f"{risk_record.get('indicators', '') or '-'}）"
+        ),
+        file_path=filepath,
+    )
+    return ok({"report_id": report_id, "filepath": filepath})
+
+
 @app.get("/api/report/list")
 def report_list(student_id: int):
     student = db.get_student(student_id)
@@ -434,3 +493,51 @@ if os.path.isdir(FRONTEND_DIST):
         if os.path.isfile(target):
             return FileResponse(target)
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+
+
+# ============================================================
+# 语音（STT / TTS）—— 方案 B：后端云端语音
+#   TTS: edge-tts 合成中文 mp3，存 audio/tts_cache/ 供前端播放
+#   STT: faster-whisper 识别上传音频，返回文字
+# ============================================================
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: Optional[str] = None
+
+
+@app.post("/api/voice/tts")
+def voice_tts(req: TTSRequest):
+    """把文本合成为中文语音 mp3，返回可播放的 URL。"""
+    if not req.text or not req.text.strip():
+        return fail(400, "text 不能为空")
+    try:
+        res = voice.text_to_speech(req.text, voice=req.voice or voice.DEFAULT_TTS_VOICE)
+    except Exception as exc:
+        return fail(500, f"语音合成失败: {exc}")
+    return ok(res)
+
+
+@app.get("/api/voice/audio/{filename}")
+def voice_audio(filename: str):
+    """播放语音模块合成的音频（仅允许 audio/tts_cache 目录内的合法音频文件）。"""
+    safe = os.path.basename(filename)
+    path = os.path.join(voice.TTS_CACHE_DIR, safe)
+    if not voice.is_audio_filename(safe) or not os.path.isfile(path):
+        return fail(404, "音频不存在")
+    return FileResponse(path, media_type=voice.audio_media_type(path), filename=safe)
+
+
+@app.post("/api/voice/stt")
+async def voice_stt(file: UploadFile = File(...)):
+    """上传一段音频（wav/mp3/m4a/ogg，建议≤60秒），返回识别出的文字。"""
+    raw = await file.read()
+    if not raw:
+        return fail(400, "音频内容为空")
+    if not voice.is_audio_filename(file.filename or ""):
+        return fail(400, "不支持的音频格式，请上传 wav/mp3/m4a/ogg")
+    try:
+        text = voice.transcribe_upload(raw, file.filename or "upload.wav")
+    except Exception as exc:
+        return fail(500, f"语音识别失败: {exc}")
+    return ok({"text": text, "language": "zh"})
