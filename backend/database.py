@@ -162,12 +162,57 @@ def init_db():
             UNIQUE(level, keyword)
         );
 
+        -- 情景演练成长记录（学生端的成长评分，跨设备持久化，教师可查看）
+        CREATE TABLE IF NOT EXISTS scenario_record (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id    INTEGER NOT NULL,
+            scene_id      TEXT    NOT NULL,
+            scene_name    TEXT,
+            good          INTEGER NOT NULL DEFAULT 0,
+            mid           INTEGER NOT NULL DEFAULT 0,
+            bad           INTEGER NOT NULL DEFAULT 0,
+            total         INTEGER NOT NULL DEFAULT 0,
+            score         REAL,
+            level         TEXT,
+            summary       TEXT,
+            created_at    TEXT    NOT NULL,
+            FOREIGN KEY (student_id) REFERENCES student(id) ON DELETE CASCADE
+        );
+
+        -- 心理量表测评记录（PHQ-9 / GAD-7 等）
+        CREATE TABLE IF NOT EXISTS assessment_record (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id    INTEGER NOT NULL,
+            scale_id      TEXT    NOT NULL,
+            scale_name    TEXT,
+            score         INTEGER,
+            level         TEXT,
+            level_cn      TEXT,
+            created_at    TEXT    NOT NULL,
+            FOREIGN KEY (student_id) REFERENCES student(id) ON DELETE CASCADE
+        );
+
+        -- 教师预警人工复核留痕（预警处置：标记已跟进 / 已处理 + 备注）
+        CREATE TABLE IF NOT EXISTS warning_review (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            assessment_id   INTEGER,
+            student_id      INTEGER NOT NULL,
+            teacher_name    TEXT,
+            status          TEXT    NOT NULL DEFAULT 'pending',
+            note            TEXT,
+            created_at      TEXT    NOT NULL,
+            FOREIGN KEY (student_id) REFERENCES student(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_message_session ON chat_message(session_id);
         CREATE INDEX IF NOT EXISTS idx_assessment_session ON risk_assessment(session_id);
         CREATE INDEX IF NOT EXISTS idx_report_session    ON report(session_id);
         CREATE INDEX IF NOT EXISTS idx_session_student   ON chat_session(student_id);
         CREATE INDEX IF NOT EXISTS idx_login_log_time    ON login_log(created_at);
         CREATE INDEX IF NOT EXISTS idx_operation_log_time ON operation_log(created_at);
+        CREATE INDEX IF NOT EXISTS idx_scenario_student   ON scenario_record(student_id);
+        CREATE INDEX IF NOT EXISTS idx_assessment_student  ON assessment_record(student_id);
+        CREATE INDEX IF NOT EXISTS idx_review_student     ON warning_review(student_id);
         """)
 
         _migrate_report_session_nullable(conn)
@@ -345,6 +390,21 @@ def get_latest_risk(session_id):
             (session_id,)
         ).fetchone()
         return dict(row) if row else None
+
+
+def get_risk_by_id(assessment_id: int):
+    """按 risk_assessment.id 查风险记录，并关联出所属学生。"""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT r.*, s.student_id AS sid "
+            "FROM risk_assessment r LEFT JOIN chat_session s ON r.session_id = s.id "
+            "WHERE r.id = ?", (assessment_id,)
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["student_id"] = d["sid"]
+        return d
 
 
 def get_student_risk_history(student_id):
@@ -837,6 +897,129 @@ def delete_account(user_id: int) -> bool:
     with get_connection() as conn:
         cur = conn.execute("DELETE FROM user_account WHERE id = ?", (user_id,))
         return cur.rowcount > 0
+
+
+# ============================================================
+# 情景演练成长记录
+# ============================================================
+
+def add_scenario_record(student_id: int, scene_id: str, scene_name: str,
+                        good: int = 0, mid: int = 0, bad: int = 0,
+                        summary: str = "") -> int:
+    """写入一次情景演练结果，并按答对率换算成长等级（S/A/B/C）。"""
+    total = int(good) + int(mid) + int(bad) or 0
+    score = round((int(good) * 1.0 + int(mid) * 0.5) / total, 2) if total else 0.0
+    if score >= 0.9:
+        level = "S"
+        summary_cn = summary or "应对非常出色，情绪觉察与表达都很好！"
+    elif score >= 0.7:
+        level = "A"
+        summary_cn = summary or "整体很稳，人际与情绪技巧成熟。"
+    elif score >= 0.5:
+        level = "B"
+        summary_cn = summary or "有一定应对能力，某些选择可以更好。"
+    else:
+        level = "C"
+        summary_cn = summary or "仍需练习，别灰心，每一次都是成长。"
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO scenario_record "
+            "(student_id, scene_id, scene_name, good, mid, bad, total, score, level, summary, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (student_id, scene_id, scene_name, good, mid, bad, total, score, level,
+             summary_cn, datetime.now().isoformat(timespec="seconds"))
+        )
+        return cur.lastrowid
+
+
+def get_scenario_records(student_id: int, limit: int = 50):
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM scenario_record WHERE student_id = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT ?", (student_id, limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_student_scenario_stats(student_id: int):
+    """成长数据汇总：总次数、平均分、最高等级。"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT COUNT(*) AS cnt, COUNT(level='S' OR NULL) AS s_cnt, "
+            "MAX(level) AS best, AVG(score) AS avg_score "
+            "FROM scenario_record WHERE student_id = ?", (student_id,)
+        ).fetchone()
+        d = dict(rows)
+        d.update({"avg_score": round(d.get("avg_score") or 0.0, 2)})
+        return d
+
+
+# ============================================================
+# 心理量表测评记录
+# ============================================================
+
+def add_assessment_record(student_id: int, scale_id: str, scale_name: str,
+                          score: int, level: str, level_cn: str) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO assessment_record "
+            "(student_id, scale_id, scale_name, score, level, level_cn, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (student_id, scale_id, scale_name, score, level, level_cn,
+             datetime.now().isoformat(timespec="seconds"))
+        )
+        return cur.lastrowid
+
+
+def get_assessment_records(student_id: int, limit: int = 50):
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM assessment_record WHERE student_id = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT ?", (student_id, limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ============================================================
+# 教师端：预警阈值 + 人工复核留痕
+# ============================================================
+
+def get_warning_min_level(default: str = "medium") -> str:
+    """预警名单包含的最低风险等级，默认 medium（黄）。"""
+    value = get_config("warning_min_level")
+    return value if value in ("medium", "high", "critical") else default
+
+
+def set_warning_min_level(level: str) -> bool:
+    if level not in ("medium", "high", "critical"):
+        return False
+    set_config("warning_min_level", level)
+    return True
+
+
+def add_warning_review(assessment_id, student_id: int, teacher_name: str,
+                       status: str, note: str = "") -> int:
+    if status not in ("reviewed", "followed_up"):
+        status = "reviewed"
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO warning_review "
+            "(assessment_id, student_id, teacher_name, status, note, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (assessment_id, student_id, teacher_name, status, note,
+             datetime.now().isoformat(timespec="seconds"))
+        )
+        return cur.lastrowid
+
+
+def get_latest_warning_review(student_id: int):
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT status, note, teacher_name, created_at "
+            "FROM warning_review WHERE student_id = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT 1", (student_id,)
+        ).fetchone()
+        return dict(row) if row else None
 
 
 if __name__ == "__main__":

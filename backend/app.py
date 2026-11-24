@@ -376,6 +376,70 @@ def chat_end(session_id: int):
 
 
 # ============================================================
+# 学生端：情景演练成长记录 / 测评记录 / 已发布资源
+# ============================================================
+
+class ScenarioRecordBody(BaseModel):
+    student_id: int
+    scene_id: str
+    scene_name: str = ""
+    good: int = 0
+    mid: int = 0
+    bad: int = 0
+    summary: str = ""
+
+
+@app.post("/api/scenario/record")
+def scenario_record_add(body: ScenarioRecordBody):
+    if not db.get_student(body.student_id):
+        return fail(404, f"学生 {body.student_id} 不存在")
+    record_id = db.add_scenario_record(
+        body.student_id, body.scene_id.strip(), body.scene_name.strip(),
+        good=body.good, mid=body.mid, bad=body.bad, summary=body.summary,
+    )
+    return ok({"record_id": record_id}, msg="成长记录已保存")
+
+
+@app.get("/api/scenario/records")
+def scenario_records(student_id: int):
+    records = db.get_scenario_records(student_id)
+    stats = db.get_student_scenario_stats(student_id)
+    return ok({"records": records, "stats": stats})
+
+
+class AssessmentRecordBody(BaseModel):
+    student_id: int
+    scale_id: str
+    scale_name: str = ""
+    score: int
+    level: str = ""
+    level_cn: str = ""
+
+
+@app.post("/api/assessment/record")
+def assessment_record_add(body: AssessmentRecordBody):
+    if not db.get_student(body.student_id):
+        return fail(404, f"学生 {body.student_id} 不存在")
+    record_id = db.add_assessment_record(
+        body.student_id, body.scale_id.strip(), body.scale_name.strip(),
+        body.score, body.level, body.level_cn,
+    )
+    return ok({"record_id": record_id}, msg="测评结果已保存")
+
+
+@app.get("/api/assessment/records")
+def assessment_records(student_id: int):
+    return ok(db.get_assessment_records(student_id))
+
+
+@app.get("/api/resources")
+def student_resources():
+    """学生端可见的已发布心理资源（内容管理里 status='published'）。"""
+    items = db.list_resources()
+    return ok({"resources": [r for r in items if r.get("status") == "published"]})
+
+
+# ============================================================
 # 教师预警
 # ============================================================
 
@@ -384,28 +448,73 @@ def teacher_warnings():
     all_students = db.get_all_students()
     warnings = []
     level_cn_map = {"low": "绿", "medium": "黄", "high": "橙", "critical": "红"}
+    min_level = db.get_warning_min_level()
+    order = {"critical": 0, "high": 1, "medium": 2}
+    min_idx = order.get(min_level, order["medium"])
     for s in all_students:
-        sessions = db.get_sessions_by_student(s["id"])
-        if not sessions:
-            continue
         latest_risk = db.get_student_risk_history(s["id"])
         if not latest_risk:
             continue
         latest = latest_risk[0]
-        if latest["risk_level"] in ("medium", "high", "critical"):
-            warnings.append({
-                "student_id": s["id"],
-                "name": s["name"],
-                "school": s.get("school", ""),
-                "grade": s.get("grade", ""),
-                "risk_level": latest["risk_level"],
-                "risk_level_cn": level_cn_map.get(latest["risk_level"], latest["risk_level"]),
-                "risk_score": latest["score"],
-                "indicators": latest.get("indicators", ""),
-                "assessed_at": latest["assessed_at"],
-            })
-    warnings.sort(key=lambda x: {"critical": 0, "high": 1, "medium": 2}.get(x["risk_level"], 9))
+        if latest["risk_level"] not in ("medium", "high", "critical"):
+            continue
+        if order.get(latest["risk_level"], 99) > min_idx:
+            continue  # 低于教师设置的预警阈值，不列入名单
+        review = db.get_latest_warning_review(s["id"])
+        warnings.append({
+            "assessment_id": latest["id"],
+            "student_id": s["id"],
+            "name": s["name"],
+            "school": s.get("school", ""),
+            "grade": s.get("grade", ""),
+            "risk_level": latest["risk_level"],
+            "risk_level_cn": level_cn_map.get(latest["risk_level"], latest["risk_level"]),
+            "risk_score": latest["score"],
+            "indicators": latest.get("indicators", ""),
+            "assessed_at": latest["assessed_at"],
+            "review_status": review["status"] if review else "pending",
+            "review_note": review["note"] if review else "",
+            "review_teacher": review["teacher_name"] if review else "",
+            "review_at": review["created_at"] if review else "",
+        })
+    # 阈值之外的（含 review 状态便于排序）按风险 + 未复核优先
+    warnings.sort(key=lambda x: (order.get(x["risk_level"], 9),
+                                 x["review_status"] != "pending"))
     return ok(warnings)
+
+
+class WarningReviewBody(BaseModel):
+    status: str   # reviewed | followed_up
+    note: str = ""
+
+
+@app.post("/api/teacher/warnings/{assessment_id}/review")
+def teacher_warning_review(assessment_id: int, body: WarningReviewBody):
+    # 按 risk_assessment.id 反查 student_id
+    row = db.get_risk_by_id(assessment_id)
+    if not row:
+        return fail(404, f"预警 {assessment_id} 不存在")
+    if body.status not in ("reviewed", "followed_up"):
+        return fail(400, "复核状态非法")
+    rid = db.add_warning_review(assessment_id, row["student_id"],
+                                "教师", body.status, body.note.strip())
+    return ok({"review_id": rid}, msg="复核已记录")
+
+
+class WarningConfigBody(BaseModel):
+    min_level: str
+
+
+@app.get("/api/teacher/warning-config")
+def teacher_warning_config():
+    return ok({"min_level": db.get_warning_min_level()})
+
+
+@app.post("/api/teacher/warning-config")
+def teacher_warning_config_set(body: WarningConfigBody):
+    if not db.set_warning_min_level(body.min_level):
+        return fail(400, "阈值应为 medium/high/critical")
+    return ok({"min_level": db.get_warning_min_level()}, msg="预警阈值已更新")
 
 
 # ============================================================
