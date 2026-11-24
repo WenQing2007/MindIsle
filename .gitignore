@@ -225,3 +225,10 @@ output/
 # Voice TTS cache (runtime generated, not committed)
 audio/tts_cache/*
 !audio/tts_cache/.gitkeep
+
+# Editor local config (VS Code workspace settings, machine-specific)
+.vscode/
+
+# Microsoft Office temp/owner lock files (~$...)
+~$*
+
