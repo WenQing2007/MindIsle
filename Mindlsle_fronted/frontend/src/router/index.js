@@ -35,6 +35,26 @@ const routes = [
     name: 'StudentReports',
     component: () => import('../views/student/ReportList.vue')
   },
+  {
+    path: '/student/breath',
+    name: 'BreathGarden',
+    component: () => import('../views/student/BreathGarden.vue')
+  },
+  {
+    path: '/student/assessment',
+    name: 'Assessment',
+    component: () => import('../views/student/Assessment.vue')
+  },
+  {
+    path: '/student/resources',
+    name: 'ResourceCenter',
+    component: () => import('../views/student/ResourceCenter.vue')
+  },
+  {
+    path: '/student/scenario',
+    name: 'ScenarioPractice',
+    component: () => import('../views/student/ScenarioPractice.vue')
+  },
 
   {
     path: '/teacher',
