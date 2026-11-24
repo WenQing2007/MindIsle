@@ -349,6 +349,8 @@ const openChat = () => {
   padding: 20px 30px;
   max-width: 1100px;
   margin: 0 auto;
+  background: #ffffff;
+  min-height: 100vh;
 }
 
 .page-intro {
@@ -444,8 +446,26 @@ const openChat = () => {
   overflow: hidden;
 }
 
+.detail-dialog :deep(.el-dialog) {
+  background: #ffffff;
+}
+
+.detail-dialog :deep(.el-dialog__header) {
+  background: #ffffff;
+  border-bottom: 1px solid #f0f0f0;
+  margin-right: 0 !important;
+  padding: 18px 24px;
+}
+
 .detail-dialog :deep(.el-dialog__body) {
   padding: 0;
+  background: #ffffff;
+}
+
+.detail-dialog :deep(.el-dialog__footer) {
+  border-top: 1px solid #f0f0f0;
+  padding: 14px 24px;
+  background: #ffffff;
 }
 
 .detail-content {
