@@ -37,6 +37,7 @@ import database as db
 import risk
 import emotion as emotion_mod
 import report as report_mod
+import report_agent as report_agent_mod
 from ai_agents.coordinator import MultiAgentCoordinator
 from ai_agents import llm as llm_client
 import voice
@@ -544,16 +545,52 @@ def gen_student_report(student_id: int):
     sessions = db.get_sessions_by_student(student_id)
     messages = db.get_all_messages_for_student(student_id)
     risk_history = db.get_student_risk_history(student_id)
+
     filepath = report_mod.generate_student_report(student, sessions, messages, risk_history)
+
+    # —— 报告生成智能体 + 合规校验 ——
+    risk_dist = {}
+    latest_level, latest_score = "green", 0.0
+    if risk_history:
+        for r in risk_history:
+            lv = r.get("risk_level", "low")
+            risk_dist[lv] = risk_dist.get(lv, 0) + 1
+        latest_level = risk_history[0].get("risk_level", "low")
+        latest_score = risk_history[0].get("score", 0.0) or 0.0
+    stats = {
+        "name": student.get("name", "学生"),
+        "latest_level": latest_level,
+        "latest_score": latest_score,
+        "session_count": len(sessions),
+        "user_msg_count": sum(1 for m in messages if m["role"] == "user"),
+        "risk_distribution": risk_dist,
+    }
+    analysis = report_agent_mod.report_agent_generate(stats)
+    report_full_text = (
+        f"{os.path.basename(filepath)}\n"
+        f"风险分布:{risk_dist}\n"
+        f"最新:{latest_level}({latest_score})\n"
+        f"{report_mod.AI_WATERMARK if hasattr(report_mod, 'AI_WATERMARK') else ''}\n"
+        f"{analysis}"
+    )
+    compliance = report_agent_mod.compliance_check(
+        {"text": report_full_text, "report_type": "counseling"}
+    )
+
     import database
     report_id = database.add_report(
         session_id=sessions[0]["id"] if sessions else None,
         report_type="counseling",
         title=os.path.basename(filepath),
-        content="学生个体心理成长报告",
+        content=analysis,
         file_path=filepath,
     )
-    return ok({"report_id": report_id, "filepath": filepath})
+    return ok({
+        "report_id": report_id,
+        "filepath": filepath,
+        "analysis": analysis,
+        "compliance": compliance,
+    })
 
 
 @app.post("/api/report/class")
@@ -610,18 +647,45 @@ def gen_crisis_report(req: CrisisReportRequest):
     filepath = report_mod.generate_crisis_report(
         student, triggering, risk_record, msgs
     )
+    # 危机报告：由"报告生成智能体"输出一段处置/分析摘要，供合规校验与展示
+    crisis_analysis = report_agent_mod.report_agent_generate(
+        {
+            "name": student.get("name", "该学生"),
+            "latest_level": risk_record.get("risk_level", "high"),
+            "latest_score": risk_record.get("score", 0.0) or 0.0,
+            "session_count": 1,
+            "user_msg_count": len([m for m in msgs if m["role"] == "user"]),
+            "risk_distribution": {risk_record.get("risk_level", "high"): 1},
+        }
+    )
+    # 危机报告合规校验（强制要求热线 + 水印 + 无诊断结论）
+    crisis_full_text = (
+        f"危机处置报告 {student['name']} 等级={risk_record.get('risk_level')}\n"
+        f"400-161-9995 心理援助热线\n"
+        f"{crisis_analysis}\n"
+        f"AI 生成内容，仅供参考，不构成诊断结论。"
+    )
+    compliance = report_agent_mod.compliance_check(
+        {"text": crisis_full_text, "report_type": "warning", "has_crisis": True}
+    )
     report_id = db.add_report(
         session_id=req.session_id,
         report_type="warning",
         title=f"危机事件处置报告 — {student['name']}",
         content=(
+            f"分析摘要（AI 生成，仅供参考，不构成诊断结论）：{crisis_analysis}\n"
             f"学生 {student['name']} 危机事件处置记录上报（风险等级="
             f"{risk_record.get('risk_level', '-')}，命中指标="
             f"{risk_record.get('indicators', '') or '-'}）"
         ),
         file_path=filepath,
     )
-    return ok({"report_id": report_id, "filepath": filepath})
+    return ok({
+        "report_id": report_id,
+        "filepath": filepath,
+        "analysis": crisis_analysis,
+        "compliance": compliance,
+    })
 
 
 @app.get("/api/report/list")
@@ -631,6 +695,19 @@ def report_list(student_id: int):
         return fail(404, f"学生 {student_id} 不存在")
     reports = db.get_reports_by_student(student_id)
     return ok(reports)
+
+
+@app.get("/api/report/compliance/{report_id}")
+def report_compliance(report_id: int):
+    """报告合规体检查询：对已生成的报告全文做合规校验并返回明细。"""
+    report = db.get_report(report_id)
+    if not report:
+        return fail(404, f"报告 {report_id} 不存在")
+    text = report.get("content") or ""
+    compliance = report_agent_mod.compliance_check(
+        {"text": text, "report_type": "counseling", "has_crisis": False}
+    )
+    return ok(compliance)
 
 
 @app.get("/api/report/detail")

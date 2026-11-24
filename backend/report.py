@@ -15,6 +15,8 @@ from typing import Any, Dict, List
 
 from fpdf import FPDF
 
+from backend.requirements import AI_WATERMARK
+
 FONT_REGULAR = r"C:\Windows\Fonts\simhei.ttf"
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output")
 
@@ -41,7 +43,9 @@ class ChinesePDF(FPDF):
         self.set_y(-15)
         self.set_font("CN", size=8)
         self.set_text_color(150, 150, 150)
-        self.cell(0, 10, f"第 {self.page_no()} 页", align="C")
+        self.cell(0, 6, AI_WATERMARK, align="C")
+        self.set_y(-8)
+        self.cell(0, 6, f"第 {self.page_no()} 页", align="C")
 
 
 def _safe_filename(name: str) -> str:
