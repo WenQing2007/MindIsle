@@ -213,8 +213,23 @@ class TeacherRegisterRequest(BaseModel):
 
 @app.post("/api/teacher/register")
 def teacher_register(req: TeacherRegisterRequest):
-    print("✅ 收到教师注册：", req.model_dump())
-    return ok(msg="教师注册成功（临时测试，不存入数据库）")
+    if not req.username or not req.password or not req.name:
+        return fail(400, "用户名、密码、姓名不能为空")
+    if len(req.username) < 3:
+        return fail(400, "用户名至少3个字符")
+    if len(req.password) < 6:
+        return fail(400, "密码至少6个字符")
+    result, err = db.register_teacher(
+        username=req.username,
+        password=req.password,
+        name=req.name,
+        school=req.school,
+        department=req.department,
+        phone=req.phone,
+    )
+    if err:
+        return fail(400, err)
+    return ok(result, msg="教师注册成功")
 
 
 

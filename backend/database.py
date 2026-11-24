@@ -511,6 +511,21 @@ def register_student(username: str, password: str, name: str, gender=None, age=N
     return {"user_id": user_id, "student_id": student_id}, None
 
 
+def register_teacher(username: str, password: str, name: str, school=None, department=None, phone=None):
+    """教师注册：复用 user_account，角色固定为 teacher。"""
+    if username_exists(username):
+        return None, "用户名已被占用"
+    user_id = create_user(username, password, "teacher")
+    return {
+        "user_id": user_id,
+        "username": username,
+        "name": name,
+        "school": school,
+        "department": department,
+        "phone": phone,
+    }, None
+
+
 def authenticate(username: str, password: str):
     pw_hash = _hash_password(password)
     with get_connection() as conn:
