@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel
@@ -35,7 +35,6 @@ _load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 import database as db
 import risk
-import emotion as emotion_mod
 import report as report_mod
 from ai_agents.coordinator import MultiAgentCoordinator
 from ai_agents import llm as llm_client
@@ -54,7 +53,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-orchestrator = MultiAgentCoordinator(emergency_hotline=risk.get_hotline())
+orchestrator = MultiAgentCoordinator()
 security = HTTPBearer(auto_error=False)
 
 
@@ -66,44 +65,11 @@ def fail(code: int, msg: str):
     return {"code": code, "data": None, "msg": msg}
 
 
-def _log_operation(user, action: str, detail: str = ""):
-    """写一条后台操作日志；user 可为 None（未登录/失败态）。"""
-    try:
-        db.add_operation_log(
-            username=(user or {}).get("username") or "-",
-            role=(user or {}).get("role") or "-",
-            action=action,
-            detail=detail,
-            user_id=(user or {}).get("id"),
-        )
-    except Exception:  # noqa: BLE001 日志失败不影响主流程
-        pass
-
-
-def _log_login(username, role, success, detail="", user_id=None, ip=None):
-    try:
-        db.add_login_log(username=username, role=role, success=success,
-                         detail=detail, user_id=user_id, ip=ip)
-    except Exception:  # noqa: BLE001
-        pass
-
-
-# 最近一次协商的 ACPs 协作日志缓存：session_id -> AIP 报文列表（供后台查看）
-_last_collaboration: dict = {}
-
-
 def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     if credentials is None:
         return None
     token = credentials.credentials
     return db.get_user_by_token(token)
-
-
-def require_admin(user=Depends(get_current_user)):
-    """管理员鉴权：非 admin 一律 403。"""
-    if not user or user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
-    return user
 
 
 # ============================================================
@@ -171,12 +137,9 @@ class LoginRequest(BaseModel):
 def student_login(req: LoginRequest):
     user = db.authenticate(req.username, req.password)
     if not user:
-        _log_login(req.username, "student", False, "账号或密码错误")
         return fail(401, "账号或密码错误")
     if user["role"] != "student":
-        _log_login(req.username, "student", False, "非学生角色")
         return fail(403, "该账号不是学生角色")
-    _log_login(req.username, "student", True, "登录成功", user_id=user["id"])
     student = db.get_student(user["student_id"]) if user.get("student_id") else None
     return ok({
         "token": user["token"],
@@ -190,12 +153,9 @@ def student_login(req: LoginRequest):
 def teacher_login(req: LoginRequest):
     user = db.authenticate(req.username, req.password)
     if not user:
-        _log_login(req.username, "teacher", False, "账号或密码错误")
         return fail(401, "账号或密码错误")
     if user["role"] != "teacher":
-        _log_login(req.username, "teacher", False, "非教师角色")
         return fail(403, "该账号不是教师角色")
-    _log_login(req.username, "teacher", True, "登录成功", user_id=user["id"])
     return ok({
         "token": user["token"],
         "userType": "teacher",
@@ -213,21 +173,32 @@ class TeacherRegisterRequest(BaseModel):
 
 @app.post("/api/teacher/register")
 def teacher_register(req: TeacherRegisterRequest):
-    print("✅ 收到教师注册：", req.model_dump())
-    return ok(msg="教师注册成功（临时测试，不存入数据库）")
-
+    if not req.username or not req.password or not req.name:
+        return fail(400, "用户名、密码、姓名不能为空")
+    if len(req.username) < 3:
+        return fail(400, "用户名至少3个字符")
+    if len(req.password) < 6:
+        return fail(400, "密码至少6个字符")
+    result, err = db.register_teacher(
+        username=req.username,
+        password=req.password,
+        name=req.name,
+        school=req.school,
+        department=req.department,
+        phone=req.phone,
+    )
+    if err:
+        return fail(400, err)
+    return ok(result, msg="教师注册成功")
 
 
 @app.post("/api/admin/login")
 def admin_login(req: LoginRequest):
     user = db.authenticate(req.username, req.password)
     if not user:
-        _log_login(req.username, "admin", False, "账号或密码错误")
         return fail(401, "账号或密码错误")
     if user["role"] != "admin":
-        _log_login(req.username, "admin", False, "非管理员角色")
         return fail(403, "该账号不是管理员角色")
-    _log_login(req.username, "admin", True, "登录成功", user_id=user["id"])
     return ok({
         "token": user["token"],
         "userType": "admin",
@@ -311,8 +282,7 @@ def chat_send(req: ChatSendRequest):
         session_id = req.session_id
 
     user_text = req.message.strip()
-    emo = emotion_mod.detect(user_text)
-    db.add_message(session_id, "user", user_text, emotion=emo["emotion"])
+    db.add_message(session_id, "user", user_text)
     # 组装多轮对话历史（去掉刚插入的当前 user 消息），供 LLM 上下文记忆；
     # 协调器会自行截取最近 8 条。无历史时传空列表等价于首轮对话。
     raw_messages = db.get_messages(session_id)
@@ -325,8 +295,6 @@ def chat_send(req: ChatSendRequest):
     ai_result = orchestrator.process_dialogue(
         user_text, session_id=str(session_id), history=history
     )
-    # 缓存本轮 ACPs 协作日志，供后台「协作日志」查看
-    _last_collaboration[str(session_id)] = orchestrator.get_collaboration_log()
     db.add_message(session_id, "assistant", ai_result["response_text"])
     db.add_risk_assessment(
         session_id,
@@ -348,8 +316,6 @@ def chat_send(req: ChatSendRequest):
         "is_vetoed": is_vetoed,
         "action": ai_result["action"],
         "reason": ai_result["reason"],
-        "emotion": emo.get("emotion"),
-        "emotion_cn": emo.get("label_cn"),
         "crisis_hotline": "400-161-9995" if is_vetoed else None,
     })
 
@@ -535,259 +501,6 @@ def list_students():
 
 
 # ============================================================
-# 后台管理 —— 用户管理（账户增删改查）
-# ============================================================
-
-class AdminUserCreate(BaseModel):
-    role: str
-    username: str
-    password: str
-    name: str | None = None
-    gender: str | None = None
-    age: int | None = None
-    school: str | None = None
-    grade: str | None = None
-
-
-class AdminUserUpdate(BaseModel):
-    username: str | None = None
-    password: str | None = None
-    role: str | None = None
-
-
-@app.get("/api/admin/users")
-def admin_users(role: str | None = None, admin: dict = Depends(require_admin)):
-    return ok(db.list_accounts(role=role))
-
-
-@app.post("/api/admin/users")
-def admin_user_create(req: AdminUserCreate, admin: dict = Depends(require_admin)):
-    uid, err = db.admin_create_account(
-        role=req.role, username=req.username, password=req.password,
-        name=req.name, gender=req.gender, age=req.age,
-        school=req.school, grade=req.grade,
-    )
-    if err:
-        return fail(400, err)
-    _log_operation(admin, "创建账号", f"角色={req.role}, 用户名={req.username}")
-    return ok({"user_id": uid}, msg="创建成功")
-
-
-@app.put("/api/admin/users/{user_id}")
-def admin_user_update(user_id: int, req: AdminUserUpdate, admin: dict = Depends(require_admin)):
-    if req.username:
-        ok_flag, err = db.update_account_username(user_id, req.username)
-        if err:
-            return fail(400, err)
-    if req.password:
-        db.update_account_password(user_id, req.password)
-    if req.role:
-        db.update_account_role(user_id, req.role)
-    _log_operation(admin, "修改账号", f"id={user_id}")
-    return ok(msg="更新成功")
-
-
-@app.delete("/api/admin/users/{user_id}")
-def admin_user_delete(user_id: int, admin: dict = Depends(require_admin)):
-    if not db.delete_account(user_id):
-        return fail(404, "账号不存在")
-    _log_operation(admin, "删除账号", f"id={user_id}")
-    return ok(msg="已删除")
-
-
-# ============================================================
-# 后台管理 —— 内容管理（树洞审核 / 心理资源）
-# ============================================================
-
-@app.get("/api/admin/treehole")
-def admin_treehole(status: str | None = None, admin: dict = Depends(require_admin)):
-    return ok(db.list_treehole_admin(status=status))
-
-
-class TreeholeReviewBody(BaseModel):
-    status: str  # approved | rejected | flagged
-
-
-@app.post("/api/admin/treehole/{hole_id}/review")
-def admin_treehole_review(hole_id: int, body: TreeholeReviewBody,
-                          admin: dict = Depends(require_admin)):
-    if not db.set_treehole_status(hole_id, body.status, reviewer=admin.get("username")):
-        return fail(400, "审核状态非法或树洞不存在")
-    _log_operation(admin, "树洞审核", f"id={hole_id} -> {body.status}")
-    return ok(msg="已审核")
-
-
-@app.delete("/api/admin/treehole/{hole_id}")
-def admin_treehole_delete(hole_id: int, admin: dict = Depends(require_admin)):
-    db.delete_treehole(hole_id)
-    _log_operation(admin, "删除树洞", f"id={hole_id}")
-    return ok(msg="已删除")
-
-
-class ResourceCreate(BaseModel):
-    title: str
-    res_type: str = "article"
-    url: str | None = None
-    content: str | None = None
-    status: str = "published"
-
-
-class ResourceUpdate(BaseModel):
-    title: str | None = None
-    res_type: str | None = None
-    url: str | None = None
-    content: str | None = None
-    status: str | None = None
-
-
-@app.get("/api/admin/resources")
-def admin_resources(admin: dict = Depends(require_admin)):
-    return ok(db.list_resources())
-
-
-@app.post("/api/admin/resources")
-def admin_resource_create(req: ResourceCreate, admin: dict = Depends(require_admin)):
-    if not req.title or not req.title.strip():
-        return fail(400, "标题不能为空")
-    rid = db.add_resource(req.title, req.res_type, req.url, req.content, req.status)
-    _log_operation(admin, "发布资源", req.title)
-    return ok({"id": rid}, msg="已发布")
-
-
-@app.put("/api/admin/resources/{res_id}")
-def admin_resource_update(res_id: int, req: ResourceUpdate,
-                          admin: dict = Depends(require_admin)):
-    if not db.update_resource(res_id, title=req.title, res_type=req.res_type,
-                              url=req.url, content=req.content, status=req.status):
-        return fail(404, "资源不存在或未变更")
-    _log_operation(admin, "更新资源", f"id={res_id}")
-    return ok(msg="已更新")
-
-
-@app.delete("/api/admin/resources/{res_id}")
-def admin_resource_delete(res_id: int, admin: dict = Depends(require_admin)):
-    db.delete_resource(res_id)
-    _log_operation(admin, "删除资源", f"id={res_id}")
-    return ok(msg="已删除")
-
-
-# ============================================================
-# 后台管理 —— 日志（登录日志 / 操作日志）
-# ============================================================
-
-@app.get("/api/admin/logs/login")
-def admin_logs_login(limit: int = 100, admin: dict = Depends(require_admin)):
-    return ok(db.list_login_logs(limit=max(1, min(limit, 500))))
-
-
-@app.get("/api/admin/logs/operation")
-def admin_logs_operation(limit: int = 100, admin: dict = Depends(require_admin)):
-    return ok(db.list_operation_logs(limit=max(1, min(limit, 500))))
-
-
-# ============================================================
-# 后台管理 —— 安全配置（危机热线 / 风险关键词）
-# ============================================================
-
-@app.get("/api/admin/config")
-def admin_config(admin: dict = Depends(require_admin)):
-    from backend.requirements import AI_WATERMARK, CRISIS_HOTLINE
-    hotline = db.get_config("crisis_hotline") or CRISIS_HOTLINE
-    return ok({
-        "crisis_hotline": hotline,
-        "ai_watermark": AI_WATERMARK,
-        "llm": {
-            "enabled": llm_client.is_enabled(),
-            "status_text": llm_client.status_text(),
-        },
-    })
-
-
-class HotlineBody(BaseModel):
-    hotline: str
-
-
-@app.post("/api/admin/config/hotline")
-def admin_config_hotline(body: HotlineBody, admin: dict = Depends(require_admin)):
-    hotline = (body.hotline or "").strip()
-    if not hotline:
-        return fail(400, "热线不能为空")
-    db.set_config("crisis_hotline", hotline)
-    orchestrator.emergency_hotline = hotline  # 立即生效
-    _log_operation(admin, "配置危机热线", hotline)
-    return ok(msg="已更新")
-
-
-@app.get("/api/admin/risk-keywords")
-def admin_risk_keywords(admin: dict = Depends(require_admin)):
-    return ok(db.list_all_risk_keywords())
-
-
-class RiskKeywordBody(BaseModel):
-    level: str
-    keyword: str
-
-
-@app.post("/api/admin/risk-keywords")
-def admin_risk_keyword_add(body: RiskKeywordBody, admin: dict = Depends(require_admin)):
-    kid, err = db.add_risk_keyword(body.level, body.keyword)
-    if err:
-        return fail(400, err)
-    _log_operation(admin, "新增风险关键词", f"{body.level}: {body.keyword}")
-    return ok({"id": kid}, msg="已新增")
-
-
-class RiskKeywordToggle(BaseModel):
-    enabled: bool
-
-
-@app.put("/api/admin/risk-keywords/{kid}")
-def admin_risk_keyword_toggle(kid: int, body: RiskKeywordToggle,
-                              admin: dict = Depends(require_admin)):
-    if not db.set_risk_keyword_enabled(kid, body.enabled):
-        return fail(404, "关键词不存在")
-    _log_operation(admin, "启用/停用风险关键词", f"id={kid} enabled={body.enabled}")
-    return ok(msg="已更新")
-
-
-@app.delete("/api/admin/risk-keywords/{kid}")
-def admin_risk_keyword_delete(kid: int, admin: dict = Depends(require_admin)):
-    if not db.delete_risk_keyword(kid):
-        return fail(404, "关键词不存在")
-    _log_operation(admin, "删除风险关键词", f"id={kid}")
-    return ok(msg="已删除")
-
-
-@app.post("/api/admin/risk-keywords/seed")
-def admin_risk_keyword_seed(admin: dict = Depends(require_admin)):
-    """将内置默认关键词同步进数据库（幂等），便于后台展示与编辑基线。"""
-    from backend.risk import KEYWORD_MAP
-    added = 0
-    for level, words in KEYWORD_MAP.items():
-        for w in words:
-            kid, err = db.add_risk_keyword(level, w)
-            if err is None:
-                added += 1
-    _log_operation(admin, "初始化风险关键词", f"新增 {added} 条")
-    return ok({"added": added}, msg=f"已同步 {added} 条内置关键词")
-
-
-# ============================================================
-# 后台管理 —— ACPs 协作日志（最近一次协商的 AIP 报文）
-# ============================================================
-
-@app.get("/api/admin/collaboration/latest")
-def admin_collaboration(session_id: str | None = None, admin: dict = Depends(require_admin)):
-    if session_id is not None and session_id in _last_collaboration:
-        data = _last_collaboration[session_id]
-    elif _last_collaboration:
-        data = list(_last_collaboration.values())[-1]
-    else:
-        data = []
-    return ok({"session_id": session_id, "messages": data})
-
-
-# ============================================================
 # 前端 SPA 托管（dist/ 目录）
 # ============================================================
 
@@ -798,11 +511,7 @@ if os.path.isdir(FRONTEND_DIST):
     async def spa_fallback(request, exc):
         if exc.status_code == 404 and request.headers.get("accept", "").startswith("text/html"):
             return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
-        # 非 SPA 场景：按原状态码返回统一 JSON 错误，避免异常处理器再次抛出变成 500
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"code": exc.status_code, "data": None, "msg": str(exc.detail or "请求错误")},
-        )
+        raise exc
 
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
 
