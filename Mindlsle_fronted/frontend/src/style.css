@@ -141,8 +141,17 @@ body {
 }
 
 .el-dialog {
+  background-color: #ffffff !important;
   border-radius: var(--brand-radius-xl) !important;
   overflow: hidden;
+}
+
+.el-dialog__body {
+  background-color: #ffffff !important;
+}
+
+.el-dialog__footer {
+  background-color: #ffffff !important;
 }
 
 .el-dialog__header {
