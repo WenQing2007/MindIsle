@@ -79,7 +79,14 @@ const routes = [
 
   {
     path: '/admin',
-    redirect: '/admin/login'
+    component: () => import('../views/admin/AdminLayout.vue'),
+    redirect: '/admin/users',
+    children: [
+      { path: 'users', name: 'AdminUsers', component: () => import('../views/admin/Users.vue') },
+      { path: 'content', name: 'AdminContent', component: () => import('../views/admin/Content.vue') },
+      { path: 'logs', name: 'AdminLogs', component: () => import('../views/admin/Logs.vue') },
+      { path: 'config', name: 'AdminConfig', component: () => import('../views/admin/Config.vue') }
+    ]
   },
   {
     path: '/admin/login',
@@ -104,19 +111,29 @@ router.beforeEach((to, from, next) => {
   // ========== 白名单加上 '/teacher/register' ==========
   const whiteList = ['/student/login', '/student/register', '/teacher/login', '/teacher/register', '/admin/login']
   const token = localStorage.getItem('token')
+  const userType = localStorage.getItem('userType')
 
   if (token) {
     if (to.path === '/student/login' || to.path === '/teacher/login' || to.path === '/admin/login') {
-      const userType = localStorage.getItem('userType')
       if (userType === 'student') next('/student/home')
       else if (userType === 'teacher') next('/teacher/warnlist')
+      else if (userType === 'admin') next('/admin/users')
       else next('/')
+    } else if (to.path.startsWith('/admin') && userType !== 'admin') {
+      // 非管理员访问后台 → 回到自己角色首页
+      next(userType === 'teacher' ? '/teacher/warnlist' : '/student/home')
+    } else if (to.path.startsWith('/teacher') && userType !== 'teacher') {
+      next(userType === 'admin' ? '/admin/users' : '/student/home')
     } else {
       next()
     }
   } else {
     if (whiteList.includes(to.path)) {
       next()
+    } else if (to.path.startsWith('/admin')) {
+      next('/admin/login')
+    } else if (to.path.startsWith('/teacher')) {
+      next('/teacher/login')
     } else {
       next('/student/login')
     }

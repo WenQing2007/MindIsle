@@ -34,6 +34,8 @@ try:
         COMPANION_AGENT_PROMPT,
         SAFETY_AGENT_PROMPT,
         SCENARIO_DIRECTOR_AGENT_PROMPT,
+        DEVELOPMENTAL_PSYCHOLOGY_AGENT_PROMPT,
+        HOME_SCHOOL_CONTEXT_AGENT_PROMPT,
     )
 except ImportError:  # 兜底：直接运行脚本时，脚本所在目录已在 sys.path
     import llm
@@ -43,6 +45,8 @@ except ImportError:  # 兜底：直接运行脚本时，脚本所在目录已在
         COMPANION_AGENT_PROMPT,
         SAFETY_AGENT_PROMPT,
         SCENARIO_DIRECTOR_AGENT_PROMPT,
+        DEVELOPMENTAL_PSYCHOLOGY_AGENT_PROMPT,
+        HOME_SCHOOL_CONTEXT_AGENT_PROMPT,
     )
 
 # ---------------------------------------------------------------------------
@@ -51,6 +55,22 @@ except ImportError:  # 兜底：直接运行脚本时，脚本所在目录已在
 EMERGENCY_HOTLINE: str = "400-161-9995"   # 24 小时全国心理援助热线
 COORDINATOR: str = "coordinator"           # 协调智能体
 VETO_AGENT: str = "safety_assessor"        # 安全评估智能体（一票否决）
+
+# 可选的“补充专家”智能体：发展心理学 / 家校上下文已在协议角色与 Prompt 中注册，
+# 默认不参与协商以保持既有简化的路由契约；通过环境变量 AGENT_EXTRA_ROLES 开启后，
+# 在多智能体协商（yellow/orange）时追加到讨论与整合流程中。
+EXTRA_AGENT_ROLES: tuple = ("developmental_psychology", "home_school_context")
+
+
+def _extra_agents_enabled() -> list:
+    """根据 AGENT_EXTRA_ROLES 解析本次要追加的补充智能体。"""
+    raw = os.getenv("AGENT_EXTRA_ROLES", "").strip().lower()
+    if raw in ("1", "true", "yes", "on", "all"):
+        return list(EXTRA_AGENT_ROLES)
+    if raw:
+        return [r.strip() for r in raw.replace(";", ",").split(",")
+                if r.strip() in EXTRA_AGENT_ROLES]
+    return []
 
 # 风险等级 → 参与协商的智能体路由表
 RISK_ROUTING: Dict[str, List[str]] = {
@@ -347,6 +367,8 @@ _AGENT_SYSTEM_PROMPTS: Dict[str, str] = {
     "empathy_companion": COMPANION_AGENT_PROMPT,
     "cognitive_behavior": CBT_AGENT_PROMPT,
     "scenario_director": SCENARIO_DIRECTOR_AGENT_PROMPT,
+    "developmental_psychology": DEVELOPMENTAL_PSYCHOLOGY_AGENT_PROMPT,
+    "home_school_context": HOME_SCHOOL_CONTEXT_AGENT_PROMPT,
 }
 
 
@@ -473,6 +495,25 @@ class MultiAgentCoordinator:
                 "risk_alert": risk_level,
                 "confidence": 0.8,
             }
+        if agent == "developmental_psychology":
+            return {
+                "role": "developmental_psychology",
+                "developmental_stage": f"{self.age} 岁学生处于自我意识发展、情绪波动加强的阶段，"
+                                       "理解抽象因果有限，更吃“具体、看得见的小步骤”。",
+                "age_notes": "用具体生活化例子解释、把大道理拆成马上能做的小动作，避免抽象说理。",
+                "guidance": "把“我很难受”换成可以具体命名的小事，先抓住其中一件能改变的开始。",
+                "risk_alert": risk_level,
+                "confidence": 0.8,
+            }
+        if agent == "home_school_context":
+            return {
+                "role": "home_school_context",
+                "home_factors": ["父母期待/亲子沟通（若输入未提及家长因素则以开放问句引导）"],
+                "school_factors": ["学业压力、同伴或师生关系（若输入未提及则不下结论）"],
+                "help_path": "找一个你信得过的真实成人（家长/班主任/心理老师）当面说说。",
+                "risk_alert": risk_level,
+                "confidence": 0.8,
+            }
         return {"role": agent, "note": "规则版占位输出", "risk_alert": risk_level}
 
     # ------------------------------------------------------------------
@@ -538,6 +579,19 @@ class MultiAgentCoordinator:
             lines.append("情景导演智能体·演练场景：" + str(o.get("simulated_scene", "")).strip())
             if opts:
                 lines.append("情景导演智能体·应对选项：" + "；".join(map(str, opts)))
+        if "developmental_psychology" in outputs:
+            o = outputs["developmental_psychology"]
+            stage = str(o.get("developmental_stage", "")).strip()
+            guidance = str(o.get("guidance", "")).strip()
+            text = "发展心理学智能体：" + (stage if stage else "分龄适配建议")
+            if guidance:
+                text += "（" + guidance + "）"
+            lines.append(text)
+        if "home_school_context" in outputs:
+            o = outputs["home_school_context"]
+            hp = str(o.get("help_path", "")).strip()
+            if hp:
+                lines.append("家校上下文智能体·求助路径：" + hp)
         return "\n".join(line for line in lines if line)
 
     def _assemble_offline_response(
@@ -643,7 +697,11 @@ class MultiAgentCoordinator:
         # 仅多智能体协商（yellow/orange 且路由 >= 2）才让每个智能体独立调用 LLM；
         # green 仅共情陪伴 1 个智能体，由协调器一次性整合，保证单次调用与既有契约。
         multi_agent = risk_level in ("yellow", "orange") and len(routed) >= 2
-        for agent in routed:
+        # 开启 AGENT_EXTRA_ROLES 时，把发展心理学 / 家校上下文作为补充专家追加进本轮协商
+        # （不修改 dispatch 返回的路由表，因此对外 routed_agents 与既有契约保持一致）。
+        extra_agents = _extra_agents_enabled() if multi_agent else []
+        routed_active = list(routed) + extra_agents
+        for agent in routed_active:
             prompt = agent_prompts.get(agent, "")
             if prompt:
                 prompt = prompt.format(
@@ -677,8 +735,8 @@ class MultiAgentCoordinator:
 
         # ---- Step 4：交叉校验（yellow 及以上、且路由不少于两个智能体时执行） ----
         if risk_level in ("yellow", "orange") and len(routed) >= 2:
-            for agent in routed:
-                others = [a for a in routed if a != agent]
+            for agent in routed_active:
+                others = [a for a in routed_active if a != agent]
                 check = new_message(
                     COORDINATOR, agent, MsgType.CROSS_CHECK_REQUEST,
                     payload={
@@ -712,7 +770,7 @@ class MultiAgentCoordinator:
                 },
                 session_id=session_id,
             ))
-            for agent in routed:
+            for agent in routed_active:
                 opinion = agent_outputs.get(agent)
                 if opinion is None:
                     opinion = self._agent_rule_output(agent, risk_level, user_text)

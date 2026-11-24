@@ -81,6 +81,7 @@ def _build_pdf(title: str, sections: List[Dict[str, Any]]) -> str:
     pdf.set_text_color(120, 120, 120)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     _mx(pdf, 0, 8, f"生成时间：{now}", align="C")
+    _mx(pdf, 0, 7, "【AI 生成内容，仅供参考，不构成诊断结论】", align="C")
     pdf.ln(4)
 
     pdf.set_draw_color(41, 65, 122)

@@ -19,8 +19,10 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 
+const router = useRouter()
 const loginFormRef = ref(null)
 const loginForm = ref({
   username: '',
@@ -39,6 +41,7 @@ const handleLogin = async () => {
       localStorage.setItem('token', data.data.token)
       localStorage.setItem('userType', 'admin')
       alert("管理员登录成功")
+      router.push('/admin/users')
     } else {
       alert(data.msg || "登录失败")
     }

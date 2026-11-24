@@ -47,6 +47,44 @@ LEVEL_DB_MAP: Dict[str, str] = {
 LEVEL_ORDER: List[str] = ["green", "yellow", "orange", "red"]
 
 
+# ---------------------------------------------------------------------------
+# 后台可配置的风险规则（安全配置模块共用）
+#   默认不配置时，effective_keywords() 与内置 KEYWORD_MAP 完全等价，
+#   因此既有行为/测试不受影响；管理员在后台增删关键词后，评估即时生效。
+# ---------------------------------------------------------------------------
+
+def effective_keywords() -> Dict[str, List[str]]:
+    """内置规则 + 后台自定义关键词（去重合并）。
+
+    数据库不可用 / 无表 / 无自定义行时，等价于内置 KEYWORD_MAP。
+    """
+    base: Dict[str, List[str]] = {lv: list(ws) for lv, ws in KEYWORD_MAP.items()}
+    try:
+        from backend import database as _db
+        rows = _db.list_enabled_risk_keywords()
+    except Exception:  # 数据库未就绪等，退回内置规则
+        return base
+    if rows:
+        for level, keyword in rows:
+            if level in base and keyword and keyword not in base[level]:
+                base[level].append(keyword)
+    return base
+
+
+def reload_rules() -> None:
+    """后台修改关键词后调用；读取逻辑每次即时从库获取，这里仅作显式语义占位。"""
+    return None
+
+
+def get_hotline(default: str = "400-161-9995") -> str:
+    """读取后台配置的危机热线；未配置时返回默认值。"""
+    try:
+        from backend import database as _db
+        return _db.get_config("crisis_hotline") or default
+    except Exception:
+        return default
+
+
 def assess(text: str) -> Dict[str, Any]:
     """
     对一段学生输入进行风险评估。
@@ -67,10 +105,11 @@ def assess(text: str) -> Dict[str, Any]:
     # 修复：'害怕考试'（黄）中同时含 '害怕'/'怕'（橙）子串，若简单叠加会
     # 把考试焦虑误拆成橙色“害怕”；按“最长匹配优先”后短字串被长词区间覆盖，
     # 从而正确命中更贴切的 yellow。
+    kws = effective_keywords()
     hits: List[Any] = []
     for level in LEVEL_ORDER:
         li = LEVEL_ORDER.index(level)
-        for kw in KEYWORD_MAP[level]:
+        for kw in kws[level]:
             pos = text.find(kw)
             if pos != -1:
                 hits.append((li, kw, pos, pos + len(kw)))
