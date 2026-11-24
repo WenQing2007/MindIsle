@@ -556,3 +556,16 @@ async def voice_stt(file: UploadFile = File(...)):
     except Exception as exc:
         return fail(500, f"语音识别失败: {exc}")
     return ok({"text": text, "language": "zh"})
+
+
+# ============================================================
+# 启动入口（uvicorn）
+# ============================================================
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+    )
