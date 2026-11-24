@@ -40,8 +40,9 @@ const handleLogin = async () => {
     if (data.code === 200) {
       localStorage.setItem('token', data.data.token)
       localStorage.setItem('userType', 'teacher')
-      alert("教师登录成功，跳转预警列表")
-      router.push('/teacher/warnlist')
+      localStorage.setItem('name', data.data.name || loginForm.value.username)
+      alert("教师登录成功，跳转工作台")
+      router.push('/teacher/home')
     } else {
       alert(data.msg || "登录失败")
     }

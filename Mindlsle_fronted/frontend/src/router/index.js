@@ -65,16 +65,30 @@ const routes = [
     name: 'TeacherLogin',
     component: () => import('../views/teacher/Login.vue')
   },
-  // ========== 新增这一条 教师注册路由 ==========
   {
     path: '/teacher/register',
     name: 'TeacherRegister',
     component: () => import('../views/teacher/Register.vue')
   },
   {
+    path: '/teacher/home',
+    name: 'TeacherHome',
+    component: () => import('../views/teacher/Home.vue')
+  },
+  {
     path: '/teacher/warnlist',
     name: 'WarnList',
     component: () => import('../views/teacher/WarnList.vue')
+  },
+  {
+    path: '/teacher/students',
+    name: 'TeacherStudents',
+    component: () => import('../views/teacher/Student.vue')
+  },
+  {
+    path: '/teacher/reports',
+    name: 'TeacherReports',
+    component: () => import('../views/teacher/Reports.vue')
   },
 
   {
@@ -108,7 +122,6 @@ const router = createRouter({
 export default router
 
 router.beforeEach((to, from, next) => {
-  // ========== 白名单加上 '/teacher/register' ==========
   const whiteList = ['/student/login', '/student/register', '/teacher/login', '/teacher/register', '/admin/login']
   const token = localStorage.getItem('token')
   const userType = localStorage.getItem('userType')
@@ -116,12 +129,11 @@ router.beforeEach((to, from, next) => {
   if (token) {
     if (to.path === '/student/login' || to.path === '/teacher/login' || to.path === '/admin/login') {
       if (userType === 'student') next('/student/home')
-      else if (userType === 'teacher') next('/teacher/warnlist')
+      else if (userType === 'teacher') next('/teacher/home')
       else if (userType === 'admin') next('/admin/users')
       else next('/')
     } else if (to.path.startsWith('/admin') && userType !== 'admin') {
-      // 非管理员访问后台 → 回到自己角色首页
-      next(userType === 'teacher' ? '/teacher/warnlist' : '/student/home')
+      next(userType === 'teacher' ? '/teacher/home' : '/student/home')
     } else if (to.path.startsWith('/teacher') && userType !== 'teacher') {
       next(userType === 'admin' ? '/admin/users' : '/student/home')
     } else {
