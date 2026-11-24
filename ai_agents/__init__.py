@@ -11,6 +11,8 @@ from ai_agents.prompts import (
     SAFETY_AGENT_PROMPT,
     SYSTEM_PROMPTS,
     VETO_INTERRUPT_PROMPT,
+    DEVELOPMENTAL_PSYCHOLOGY_AGENT_PROMPT,
+    HOME_SCHOOL_CONTEXT_AGENT_PROMPT,
 )
 from ai_agents.protocols import AGENT_ROLES, AIPMessage, MsgType, new_message
 from ai_agents.coordinator import MultiAgentCoordinator
@@ -20,6 +22,8 @@ __all__ = [
     "AIPMessage",
     "CBT_AGENT_PROMPT",
     "COMPANION_AGENT_PROMPT",
+    "DEVELOPMENTAL_PSYCHOLOGY_AGENT_PROMPT",
+    "HOME_SCHOOL_CONTEXT_AGENT_PROMPT",
     "MsgType",
     "MultiAgentCoordinator",
     "SAFETY_AGENT_PROMPT",
