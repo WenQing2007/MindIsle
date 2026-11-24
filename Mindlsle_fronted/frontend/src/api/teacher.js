@@ -23,3 +23,18 @@ export function teacherRegister(data) {
     data
   })
 }
+
+// ===== 预警人工复核 + 阈值 =====
+export function reviewWarning(assessment_id, status, note) {
+  return request({
+    url: `/api/teacher/warnings/${assessment_id}/review`,
+    method: 'post',
+    data: { status, note: note || '' }
+  })
+}
+export function getWarningConfig() {
+  return request({ url: '/api/teacher/warning-config', method: 'get' })
+}
+export function setWarningConfig(min_level) {
+  return request({ url: '/api/teacher/warning-config', method: 'post', data: { min_level } })
+}

@@ -61,14 +61,48 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { getPublishedResources } from '@/api/student'
 
 const router = useRouter()
 const keyword = ref('')
 const activeTag = ref('全部')
 const detailVisible = ref(false)
 const currentItem = ref(null)
+
+// 后端内容管理里已发布的资源（status=published），非空时优先展示
+const published = ref([])
+const toLocal = (r) => {
+  const map = {
+    article: ['📄', '#eef3fa', '文章'],
+    audio: ['🎧', '#e8f8f0', '音频'],
+    video: ['🎬', '#f5efff', '视频'],
+    relax: ['🧘', '#fff4e4', '放松训练']
+  }
+  const m = map[r.res_type] || ['📄', '#eef3fa', '文章']
+  return {
+    id: r.id,
+    emoji: m[0],
+    cover: `linear-gradient(135deg, ${m[1]}, #ffffff)`,
+    tag: m[2],
+    readTime: '约 3 分钟',
+    title: r.title,
+    summary: (r.content || '').replace(/<[^>]+>/g, '').slice(0, 60),
+    date: (r.created_at || '').slice(0, 10),
+    content: r.content || r.url || '',
+    isAdmin: true
+  }
+}
+const loadPublished = async () => {
+  try {
+    const res = await getPublishedResources()
+    if (res.code === 200 && Array.isArray(res.data.resources) && res.data.resources.length) {
+      published.value = res.data.resources.map(toLocal)
+    }
+  } catch (e) { /* 后端不可用时回退内置资源 */ }
+}
+onMounted(loadPublished)
 
 const resources = [
   {
@@ -268,15 +302,18 @@ const resources = [
   }
 ]
 
-const allTagList = computed(() => ['全部', ...new Set(resources.map(r => r.tag))])
+const allTagList = computed(() => ['全部', ...new Set(listSource.value.map(r => r.tag))])
 const allTags = allTagList
 
+// 数据源：优先显示后台发布的资源，否则回退内置静态资源
+const listSource = computed(() => (published.value.length ? published.value : resources))
+
 const filteredList = computed(() => {
-  return resources.filter(r => {
+  return listSource.value.filter(r => {
     const matchTag = activeTag.value === '全部' || r.tag === activeTag.value
     const matchKey = !keyword.value ||
       r.title.includes(keyword.value) ||
-      r.summary.includes(keyword.value) ||
+      (r.summary || '').includes(keyword.value) ||
       r.tag.includes(keyword.value)
     return matchTag && matchKey
   })

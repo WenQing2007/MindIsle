@@ -100,6 +100,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { saveAssessmentRecord, getAssessmentRecords } from '@/api/student'
+
+const studentId = () => parseInt(localStorage.getItem('student_id') || '1')
 
 const scales = [
   {
@@ -220,26 +223,52 @@ const resultEmoji = computed(() => {
   return { none: '🌟', mild: '🌿', moderate: '🍃', severe: '🌧️' }[resultLevel.value] || '✨'
 })
 
-const saveResult = () => {
+const saveResult = async () => {
   const record = {
+    student_id: studentId(),
     scale_id: currentScale.value.id,
     scale_name: currentScale.value.title,
     score: totalScore.value,
     level: resultLevel.value,
-    level_cn: resultLevelCn.value,
-    time: new Date().toLocaleString('zh-CN')
+    level_cn: resultLevelCn.value
   }
-  historyList.value.unshift(record)
-  localStorage.setItem('assessment_history', JSON.stringify(historyList.value.slice(0, 20)))
-  ElMessage.success('结果已保存到本地')
+  try {
+    const res = await saveAssessmentRecord(record)
+    if (res.code === 200) {
+      await loadHistory()
+      ElMessage.success('结果已保存')
+    } else {
+      ElMessage.error(res.msg || '保存失败')
+    }
+  } catch (e) {
+    // 后端不可用时回退到本地存储，保证可用性
+    historyList.value.unshift({ ...record, time: new Date().toLocaleString('zh-CN') })
+    localStorage.setItem('assessment_history', JSON.stringify(historyList.value.slice(0, 20)))
+    ElMessage.success('已保存到本地（未连接后端）')
+  }
 }
 
-onMounted(() => {
+const loadHistory = async () => {
+  try {
+    const res = await getAssessmentRecords(studentId())
+    if (res.code === 200) {
+      historyList.value = res.data.map(h => ({
+        ...h,
+        time: (h.created_at || '').replace('T', ' ')
+      }))
+      return true
+    }
+  } catch (e) { /* 忽略 */ }
+  // 兜底：读本地历史
   const saved = localStorage.getItem('assessment_history')
   if (saved) {
     try { historyList.value = JSON.parse(saved) } catch {}
   }
-})
+  return false
+}
+
+onMounted(loadHistory)
+
 </script>
 
 <style scoped>

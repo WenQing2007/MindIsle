@@ -102,3 +102,24 @@ export function getReportDetail(report_id) {
     params: { report_id }
   })
 }
+
+// ===== 情景演练成长记录 =====
+export function saveScenarioRecord(data) {
+  return request({ url: '/api/scenario/record', method: 'post', data })
+}
+export function getScenarioRecords(student_id) {
+  return request({ url: '/api/scenario/records', method: 'get', params: { student_id } })
+}
+
+// ===== 心理量表测评记录 =====
+export function saveAssessmentRecord(data) {
+  return request({ url: '/api/assessment/record', method: 'post', data })
+}
+export function getAssessmentRecords(student_id) {
+  return request({ url: '/api/assessment/records', method: 'get', params: { student_id } })
+}
+
+// ===== 已发布心理资源（内容管理） =====
+export function getPublishedResources() {
+  return request({ url: '/api/resources', method: 'get' })
+}

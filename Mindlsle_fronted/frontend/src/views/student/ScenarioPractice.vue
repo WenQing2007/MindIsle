@@ -11,7 +11,16 @@
         </div>
       </div>
 
-      <el-row :gutter="20">
+      <el-card v-if="growStats && growStats.cnt" shadow="never" class="grow-overview">
+        <div class="grow-title">🌱 我的成长记录（{{ growStats.cnt }} 次练习）</div>
+        <div class="grow-metrics">
+          <div class="grow-box"><b>{{ growStats.best || '-' }}</b><span>最高等级</span></div>
+          <div class="grow-box"><b>{{ Math.round((growStats.avg_score || 0) * 100) }}%</b><span>平均得分</span></div>
+          <div class="grow-box"><b>{{ growStats.s_cnt }}</b><span>S 级次数</span></div>
+        </div>
+      </el-card>
+
+      <el-row :gutter="20" style="margin-top:8px">
         <el-col :xs="24" :sm="12" :md="8" v-for="scene in scenes" :key="scene.id">
           <el-card shadow="hover" class="scene-card" @click="startScene(scene.id)">
             <div class="scene-cover" :style="{ background: scene.cover }">
@@ -61,6 +70,10 @@
           <div class="ending-emoji">{{ endingEmoji }}</div>
           <div class="ending-title">🎉 情景演练完成！</div>
           <div class="ending-summary">{{ currentScene.title }} · {{ endingSummary }}</div>
+          <div v-if="grade.level !== '-'" class="ending-grade">
+            <span class="grade-chip" :class="'grade-' + grade.level">{{ grade.level }}</span>
+            <span class="grade-cn">{{ grade.cn }}</span>
+          </div>
           <div class="ending-stats">
             <div class="stat-box">
               <div class="stat-num" style="color:#63b980">{{ score.good }}</div>
@@ -95,7 +108,43 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
+import { saveScenarioRecord, getScenarioRecords } from '@/api/student'
+
+const studentId = () => parseInt(localStorage.getItem('student_id') || '1')
+const growStats = ref(null)
+
+// 成长等级（与后端规则一致）：good=1, mid=0.5, bad=0
+const grade = computed(() => {
+  const total = score.value.good + score.value.mid + score.value.bad
+  if (!total) return { level: '-', cn: '' }
+  const r = (score.value.good + score.value.mid * 0.5) / total
+  if (r >= 0.9) return { level: 'S', cn: '应对非常出色，情绪觉察与表达都很棒！' }
+  if (r >= 0.7) return { level: 'A', cn: '整体很稳，人际与情绪技巧成熟。' }
+  if (r >= 0.5) return { level: 'B', cn: '有一定应对能力，某些选择可以更好。' }
+  return { level: 'C', cn: '仍需练习，别灰心，每一次都是成长。' }
+})
+
+const loadStats = async () => {
+  try {
+    const res = await getScenarioRecords(studentId())
+    if (res.code === 200) growStats.value = res.data.stats
+  } catch (e) { /* 忽略 */ }
+}
+
+const recordResult = () => {
+  if (!currentScene.value) return
+  saveScenarioRecord({
+    student_id: studentId(),
+    scene_id: currentScene.value.id,
+    scene_name: currentScene.value.title,
+    good: score.value.good,
+    mid: score.value.mid,
+    bad: score.value.bad
+  }).then(res => { if (res.code === 200) loadStats() }).catch(() => {})
+}
+
+onMounted(loadStats)
 
 const scenes = [
   {
@@ -306,6 +355,7 @@ const makeChoice = (idx) => {
   nextTick(() => {
     scrollToBottom()
     if (option.next === 'end') {
+      recordResult()
       setTimeout(() => { showEnding.value = true }, 600)
     } else {
       setTimeout(() => advance(), 800)
@@ -615,4 +665,65 @@ const scrollToBottom = () => {
   color: var(--brand-text-muted);
   margin-top: 6px;
 }
+
+.grow-overview {
+  margin-bottom: 16px;
+  border-radius: 14px;
+}
+.grow-title {
+  font-weight: 600;
+  color: var(--brand-text);
+  font-size: 15px;
+  margin-bottom: 12px;
+}
+.grow-metrics {
+  display: flex;
+  gap: 30px;
+}
+.grow-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.grow-box b {
+  font-size: 24px;
+  color: var(--brand-primary);
+  line-height: 1.1;
+}
+.grow-box span {
+  font-size: 12px;
+  color: var(--brand-text-muted);
+  margin-top: 4px;
+}
+
+.ending-grade {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.grade-chip {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 800;
+  color: #fff;
+}
+.grade-S { background: linear-gradient(135deg, #f7b84b, #f5a623); }
+.grade-A { background: linear-gradient(135deg, #5cb895, #3d9a78); }
+.grade-B { background: linear-gradient(135deg, #5b9bd5, #4a90c2); }
+.grade-C { background: linear-gradient(135deg, #b0b7c0, #8a94a0); }
+.grade-cn {
+  font-size: 14px;
+  color: var(--brand-text-soft);
+  max-width: 300px;
+  text-align: left;
+  line-height: 1.5;
+}
+
 </style>
