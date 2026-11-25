@@ -117,6 +117,7 @@
               :disabled="loading"
               maxlength="500"
               show-word-limit
+              autocomplete="off"
             ></el-input>
             <div style="margin-top:8px; text-align:right">
               <el-button type="primary" @click="send" :loading="loading">发送</el-button>
