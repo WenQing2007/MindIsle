@@ -90,12 +90,12 @@ const routes = [
     name: 'TeacherReports',
     component: () => import('../views/teacher/Reports.vue')
   },
-
   {
     path: '/admin',
     component: () => import('../views/admin/AdminLayout.vue'),
-    redirect: '/admin/users',
+    redirect: '/admin/dashboard',
     children: [
+      { path: 'dashboard', name: 'AdminDashboard', component: () => import('../views/admin/Dashboard.vue') },
       { path: 'users', name: 'AdminUsers', component: () => import('../views/admin/Users.vue') },
       { path: 'content', name: 'AdminContent', component: () => import('../views/admin/Content.vue') },
       { path: 'logs', name: 'AdminLogs', component: () => import('../views/admin/Logs.vue') },
