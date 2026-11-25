@@ -201,4 +201,15 @@ const handleCommand = (cmd) => {
   align-items: center;
   gap: 10px;
   cursor: pointer;
-  padding: 4px 12
+  padding: 4px 12px 4px 4px;
+  border-radius: 24px;
+  transition: background 0.2s;
+}
+.user-info:hover { background: var(--brand-bg-soft); }
+.user-name { font-weight: 600; color: var(--brand-text); font-size: 14px; }
+
+.admin-main {
+  background: var(--brand-bg);
+  padding: 24px;
+}
+</style>
