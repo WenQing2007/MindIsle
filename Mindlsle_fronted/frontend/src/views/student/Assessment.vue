@@ -67,6 +67,19 @@
               <span class="opt-desc">{{ opt.desc }}</span>
             </el-radio>
           </el-radio-group>
+          <div class="question-nav">
+            <el-button 
+              :disabled="currentIndex === 0" 
+              @click="currentIndex--"
+            >← 上一题</el-button>
+            <el-button 
+              type="primary"
+              :disabled="answers[currentIndex] === null"
+              @click="currentIndex++"
+            >
+              {{ currentIndex === currentScale.questions.length - 1 ? '查看结果 →' : '下一题 →' }}
+            </el-button>
+          </div>
         </div>
 
         <div class="result-area" v-else>
@@ -435,6 +448,14 @@ onMounted(loadHistory)
 .opt-desc {
   font-size: 12px;
   color: var(--brand-text-muted);
+}
+
+.question-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px dashed var(--brand-border);
 }
 
 .result-area {

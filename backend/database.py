@@ -583,8 +583,10 @@ def get_treehole_list(limit: int = 100):
     """学生端可见的树洞：仅返回已审核通过（approved）的条目。"""
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, content, author_name, created_at FROM treehole "
-            "WHERE status = 'approved' ORDER BY created_at DESC LIMIT ?",
+            "SELECT t.id, t.content, t.author_name, t.created_at, "
+            "(SELECT COUNT(*) FROM treehole_comment WHERE hole_id = t.id) AS comment_count "
+            "FROM treehole t "
+            "WHERE t.status = 'approved' ORDER BY t.created_at DESC LIMIT ?",
             (limit,)
         ).fetchall()
         return [dict(r) for r in rows]

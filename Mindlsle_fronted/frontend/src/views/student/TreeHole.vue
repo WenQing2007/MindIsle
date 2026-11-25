@@ -48,7 +48,7 @@
             class="toggle-comments"
             @click="toggleComments(item.id)"
           >
-            💬 评论 <span class="comment-count">{{ commentMap[item.id]?.length || 0 }}</span>
+            💬 评论 <span class="comment-count">{{ (commentMap[item.id]?.length !== undefined ? commentMap[item.id].length : item.comment_count) || 0 }}</span>
             <span class="arrow" :class="{ open: expandedId === item.id }">▾</span>
           </el-button>
         </div>
